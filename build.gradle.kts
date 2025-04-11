@@ -51,8 +51,9 @@ tasks.register("proguard") {
             "-injars", input.absolutePath,
             "-outjars", output.absolutePath,
             "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
-            "-keep public class bf.MainKt { public static void main(java.lang.String[]); }",
+            "-keep public class bf.* { *; }",
             "-dontobfuscate",
+            "-assumenosideeffects", "public class bf.DslKt\$bfProgram\$Impl { public kotlin.Unit getUnit(java.lang.Object); }",
         )
 
         val proguardConfig = ProguardConfiguration()
@@ -65,7 +66,7 @@ tasks.register("proguard") {
 }
 
 tasks.assemble {
-    dependsOn(tasks.shadowJar)
+    dependsOn(tasks["proguard"])
 }
 
 dependencies {
