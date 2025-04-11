@@ -18,5 +18,7 @@ fun main(args: Array<String>) {
     program = bfStrip(bfOptimise(program))
     //println(bfStringify(program))
 
-    bfRun(program)
+    System.out.bufferedWriter().use { w ->
+        bfRun(program, stdout = { w.write(it) })
+    }
 }

@@ -23,9 +23,8 @@ private fun runImpl(tape: UByteArray, pointer: Int,
             is Print -> stdout(tape[pointer].toInt())
             is Input -> tape[pointer] = stdin().toUByte()
             is Loop -> {
-                var arr = op.toTypedArray()
                 while (tape[pointer].toInt() != 0) {
-                    pointer = runImpl(tape, pointer, arr, stdout, stdin)
+                    pointer = runImpl(tape, pointer, op.contents, stdout, stdin)
                 }
             }
             SetToZero -> tape[pointer] = 0u

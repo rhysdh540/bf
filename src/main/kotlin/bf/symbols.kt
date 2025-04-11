@@ -49,7 +49,7 @@ object Input : BFOperation {
 /**
  * Represents a loop and its contents.
  */
-data class Loop(private val contents: Array<BFOperation>) : BFOperation, List<BFOperation> by contents.toList() {
+data class Loop(internal val contents: Array<BFOperation>) : BFOperation, List<BFOperation> by contents.toList() {
     constructor(contents: Iterable<BFOperation>) : this(contents.toList().toTypedArray())
     override fun toString() = "Loop($contents)"
 
