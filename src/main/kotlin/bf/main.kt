@@ -1,5 +1,6 @@
 package bf
 
+import java.io.Reader
 import kotlin.io.path.Path
 import kotlin.io.path.readText
 
@@ -18,7 +19,13 @@ fun main(args: Array<String>) {
     program = bfStrip(bfOptimise(program))
     //println(bfStringify(program))
 
-    System.out.bufferedWriter().use { w ->
-        bfRun(program, stdout = { w.write(it) })
+//    bfRun(program)
+    System.setProperty("bf.debug.lvs", "true")
+    System.setProperty("bf.debug.export", "true")
+    Path(".bf.out").toFile().deleteRecursively()
+
+    val compiled = bfCompile(program)
+    System.out.writer().use {
+        compiled(it, Reader.nullReader())
     }
 }
