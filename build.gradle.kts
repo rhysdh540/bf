@@ -1,5 +1,15 @@
+import proguard.ConfigurationParser
+import proguard.ProGuard
+import proguard.Configuration as ProguardConfiguration
+
 plugins {
     kotlin("jvm") version "2.1.10"
+    id("com.gradleup.shadow") version("9.0.0-beta12")
+}
+
+buildscript {
+    repositories.mavenCentral()
+    dependencies.classpath("com.guardsquare:proguard-base:7.7.0")
 }
 
 group = "dev.rdh"
@@ -7,6 +17,55 @@ version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
+}
+
+tasks.withType<AbstractArchiveTask> {
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
+tasks.jar {
+    manifest.attributes["Main-Class"] = "bf.MainKt"
+}
+
+tasks.shadowJar {
+    manifest.attributes["Main-Class"] = "bf.MainKt"
+
+    exclude("**/*.kotlin_builtins")
+}
+
+tasks.register("proguard") {
+    group = "build"
+    description = "Run ProGuard on the shadow jar"
+
+    dependsOn("shadowJar")
+
+    val input = tasks.shadowJar.get().archiveFile.get().asFile
+    val output = layout.buildDirectory.dir("libs").get().asFile.resolve("bf.jar")
+
+    inputs.file(input)
+    outputs.file(output)
+
+    doLast {
+        val options = listOf(
+            "-injars", input.absolutePath,
+            "-outjars", output.absolutePath,
+            "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
+            "-keep public class bf.MainKt { public static void main(java.lang.String[]); }",
+            "-dontobfuscate",
+        )
+
+        val proguardConfig = ProguardConfiguration()
+        ConfigurationParser(options.toTypedArray(), null).apply {
+            parse(proguardConfig)
+        }
+
+        ProGuard(proguardConfig).execute()
+    }
+}
+
+tasks.assemble {
+    dependsOn(tasks.shadowJar)
 }
 
 dependencies {
