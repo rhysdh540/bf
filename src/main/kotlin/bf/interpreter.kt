@@ -5,12 +5,12 @@ fun bfRun(program: Iterable<BFOperation>,
           stdout: (Int) -> Unit = { print(it.toChar()) },
           stdin: () -> Int = { System.`in`.read() },
 ) {
-    runImpl(UByteArray(TAPE_SIZE), 0, program.toList(), stdout, stdin)
+    runImpl(UByteArray(TAPE_SIZE), 0, program.toList().toTypedArray(), stdout, stdin)
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
 private fun runImpl(tape: UByteArray, pointer: Int,
-                    program: List<BFOperation>,
+                    program: Array<BFOperation>,
                     stdout: (Int) -> Unit, stdin: () -> Int): Int {
     var pointer = pointer
     var insn = 0
@@ -20,10 +20,13 @@ private fun runImpl(tape: UByteArray, pointer: Int,
         when (op) {
             is PointerMove -> pointer = pointer.wrappingAdd(op.value, TAPE_SIZE)
             is ValueChange -> tape[pointer] = tape[pointer].toInt().wrappingAdd(op.value, 256).toUByte()
-            Print -> stdout(tape[pointer].toInt())
-            Input -> tape[pointer] = stdin().toUByte()
-            is Loop -> while (tape[pointer].toInt() != 0) {
-                pointer = runImpl(tape, pointer, op, stdout, stdin)
+            is Print -> stdout(tape[pointer].toInt())
+            is Input -> tape[pointer] = stdin().toUByte()
+            is Loop -> {
+                var arr = op.toTypedArray()
+                while (tape[pointer].toInt() != 0) {
+                    pointer = runImpl(tape, pointer, arr, stdout, stdin)
+                }
             }
             SetToZero -> tape[pointer] = 0u
         }

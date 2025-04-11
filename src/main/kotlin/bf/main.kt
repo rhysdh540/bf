@@ -16,6 +16,7 @@ fun main(args: Array<String>) {
 
     var program = bfParse(programText)
     program = bfStrip(bfOptimise(program))
+    //println(bfStringify(program))
 
     bfRun(program)
 }

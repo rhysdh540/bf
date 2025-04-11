@@ -36,27 +36,28 @@ data class ValueChange(val value: Int) : BFOperation {
  * Represents a command to output the value at the current data pointer.
  */
 object Print : BFOperation {
-    override fun toString(): String {
-        return "Print"
-    }
+    override fun toString() = "Print"
 }
 
 /**
  * Represents a command to input a value and store it at the current data pointer.
  */
 object Input : BFOperation {
-    override fun toString(): String {
-        return "Input"
-    }
+    override fun toString() = "Input"
 }
 
 /**
  * Represents a loop and its contents.
  */
-data class Loop(private val contents: List<BFOperation>) : BFOperation, List<BFOperation> by contents {
-    override fun toString(): String {
-        return "Loop($contents)"
+data class Loop(private val contents: Array<BFOperation>) : BFOperation, List<BFOperation> by contents.toList() {
+    constructor(contents: Iterable<BFOperation>) : this(contents.toList().toTypedArray())
+    override fun toString() = "Loop($contents)"
+
+    override fun equals(other: Any?): Boolean {
+        return this === other || (other is Loop && contents.contentEquals(other.contents))
     }
+
+    override fun hashCode() = contents.contentHashCode()
 }
 
 /**
@@ -64,7 +65,5 @@ data class Loop(private val contents: List<BFOperation>) : BFOperation, List<BFO
  * This isn't a standard Brainfuck command, but is used in the optimised version of the interpreter.
  */
 object SetToZero : BFOperation {
-    override fun toString(): String {
-        return "SetToZero"
-    }
+    override fun toString() = "SetToZero"
 }
