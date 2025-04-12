@@ -8,12 +8,13 @@ fun main(args: Array<String>) {
         println("""
             |Usage: bf.jar <program.b>
             |Options:
-            |       --optimise, -O  Optimise the intermediate representation of the program
-            |       --strip, -S     Strip unused code from the program
-            |       --compile       Compile the program to a function
-            |       --interpreted   Run the program in interpreted mode (default)
-            |       --string, -s    Run the next argument as a string
-            |       <program.b(f)>    Run the program in the file
+            |       --optimise, -O      Optimise the intermediate representation of the following programs
+            |       --strip, -S         Strip unused code from the following programs
+            |       --compile, -c       Compile the following programs to java bytecode
+            |       --interpreted, -i   Run the following programs in interpreted mode (default)
+            |       --string, -s        Run the next argument as a string
+            |       --export, -e        Export the following programs to a file in `.bf.out`
+            |       --no-export         Do not export the following programs
         """.trimMargin())
         return
     }
@@ -22,26 +23,27 @@ fun main(args: Array<String>) {
     var nextIsString = false
     var optimise = false
     var strip = false
+    var export = false
 
     for (arg in args) {
         if (nextIsString) {
             nextIsString = false
             val program = arg
-            runProgram(program, compiled, optimise, strip)
+            runProgram(program, compiled, optimise, strip, export)
             continue
         }
 
-        if (arg == "--optimise" || arg == "-O") {
+        if (arg in arrayOf("--optimise", "-O")) {
             optimise = true
             continue
         }
 
-        if (arg == "--strip" || arg == "-S") {
+        if (arg in arrayOf("--strip", "-S")) {
             strip = true
             continue
         }
 
-        if (arg == "--compile") {
+        if (arg in arrayOf("--compile", "-c")) {
             compiled = true
             continue
         }
@@ -50,7 +52,17 @@ fun main(args: Array<String>) {
             continue
         }
 
-        if (arg == "--string" || arg == "-s") {
+        if (arg in arrayOf("--export", "-e")) {
+            export = true
+            continue
+        }
+
+        if (arg == "--no-export") {
+            export = false
+            continue
+        }
+
+        if (arg in arrayOf("--string", "-s")) {
             nextIsString = true
             continue
         }
@@ -62,7 +74,7 @@ fun main(args: Array<String>) {
 
         if (arg.endsWith(".b") || arg.endsWith(".bf")) {
             val program = Path(arg).readText()
-            runProgram(program, compiled, optimise, strip)
+            runProgram(program, compiled, optimise, strip, export)
         } else {
             println("Unknown argument: $arg")
             return
@@ -75,6 +87,7 @@ private fun runProgram(
     compile: Boolean,
     optimise: Boolean,
     strip: Boolean,
+    export: Boolean
 ) {
     var program = bfParse(literal)
     if (optimise)
@@ -83,7 +96,10 @@ private fun runProgram(
         program = bfStrip(program)
 
     if (compile) {
-        val compiled = bfCompile(program)
+        val compiled = bfCompile(program, CompileOptions(
+            export = export,
+            localVariables = export
+        ))
         val w = System.out.writer()
         compiled(w, System.`in`.reader())
         w.flush()

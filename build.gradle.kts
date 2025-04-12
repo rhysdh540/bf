@@ -55,7 +55,7 @@ tasks.register("proguard") {
             "-injars", input.absolutePath,
             "-outjars", output.absolutePath,
             "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
-            "-keep public class bf.* { *; }",
+            "-keep public class bf.* { public *; }",
             "-dontobfuscate",
             "-dontwarn", "java.lang.invoke.*",
             "-assumenosideeffects", "public class bf.DslKt\$bfProgram\$Impl { public kotlin.Unit getUnit(java.lang.Object); }",
@@ -92,7 +92,10 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
         tasks.register<JavaExec>(name) {
             group = "examples"
             description = "Run the file ${name}.b"
-            args = listOf(file.absolutePath)
+            args = listOf(
+                "-O", "-S", "-c", "-e",
+                file.absolutePath
+            )
 
             classpath = sourceSets["main"].runtimeClasspath
             mainClass.set("bf.MainKt")

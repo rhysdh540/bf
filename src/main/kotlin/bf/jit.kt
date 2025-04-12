@@ -211,6 +211,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
             visitInsn(BALOAD)
+            visitIntInsn(BIPUSH, 0xFF)
+            visitInsn(IAND)
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Writer", "write", "(I)V", false)
         }
         is Input -> {
@@ -294,13 +296,13 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     return convertHandle(method)
 }
 
-//private fun verifyClass(clazz: ByteArray) {
-//    try {
-//        CheckClassAdapter.verify(ClassReader(clazz), false, PrintWriter(Writer.nullWriter()))
-//    } catch (_: AnalyzerException) {
-//        CheckClassAdapter.verify(ClassReader(clazz), true, PrintWriter(System.err))
-//    }
-//}
+private fun verifyClass(clazz: ByteArray) {
+    try {
+        CheckClassAdapter.verify(ClassReader(clazz), false, PrintWriter(Writer.nullWriter()))
+    } catch (_: AnalyzerException) {
+        CheckClassAdapter.verify(ClassReader(clazz), true, PrintWriter(System.err))
+    }
+}
 
 private fun MethodVisitor.pushIntConstant(value: Int) {
     when (value) {
