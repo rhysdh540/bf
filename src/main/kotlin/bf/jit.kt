@@ -211,7 +211,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
             visitInsn(BALOAD)
-            visitIntInsn(BIPUSH, 0xFF)
+            visitIntInsn(SIPUSH, 0xFF)
             visitInsn(IAND)
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Writer", "write", "(I)V", false)
         }

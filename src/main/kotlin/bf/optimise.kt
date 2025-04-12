@@ -65,6 +65,7 @@ fun bfOptimise(program: Iterable<BFOperation>): List<BFOperation> {
  * - remove any [PointerMove] or [ValueChange] operations that have `value == 0`
  * - remove any loops at the beginning of the program, which will never run
  * - remove any [PointerMove], [ValueChange] or [SetToZero] operations at the end of the program
+ * - removes the second and after of any set of consecutive loops
  */
 fun bfStrip(program: Iterable<BFOperation>): List<BFOperation> {
     val loop = program is Loop
@@ -86,6 +87,15 @@ fun bfStrip(program: Iterable<BFOperation>): List<BFOperation> {
             it is PointerMove || it is ValueChange || it is SetToZero
         }) {
             program.removeAt(program.lastIndex)
+        }
+    }
+
+    var i = 0
+    while (i < program.size - 1) {
+        if ((program[i] is Loop || program[i] is SetToZero) && (program[i + 1] is Loop || program[i + 1] is SetToZero)) {
+            program.removeAt(i + 1)
+        } else {
+            i++
         }
     }
 
