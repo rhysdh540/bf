@@ -1,6 +1,7 @@
 import bf.opt.bfOptimise
 import bf.bfParse
 import bf.bfRun
+import java.io.StringWriter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -34,7 +35,7 @@ private fun getResource(name: String): String {
 private fun programBench(program: String): String {
     val parsed = bfParse(program)
     val optimised = bfOptimise(parsed)
-    val output = StringBuilder()
-    bfRun(optimised, { output.append(it.toChar()) }, { error("shouldn't be called") })
+    val output = StringWriter()
+    bfRun(optimised, stdout = output)
     return output.toString()
 }

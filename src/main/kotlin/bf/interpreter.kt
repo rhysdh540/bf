@@ -5,20 +5,17 @@ import java.io.OutputStream
 import java.io.Reader
 import java.io.Writer
 
-fun bfRun(program: Iterable<BFOperation>,
-          stdout: OutputStream = System.out,
-          stdin: InputStream = System.`in`,
-) {
-    stdout.writer().let { w ->
-        bfRun(program, w, stdin.reader())
-        w.flush()
-    }
-}
-
 @OptIn(ExperimentalUnsignedTypes::class)
 fun bfRun(program: Iterable<BFOperation>,
-          stdout: Writer, stdin: Reader) {
+          stdout: Writer = System.out.writer(),
+          stdin: Reader = System.`in`.reader(),
+) {
     runImpl(UByteArray(TAPE_SIZE), 0, program.toList().toTypedArray(), stdout, stdin)
+    stdout.flush()
+}
+
+fun bfRun(program: Iterable<BFOperation>, stdout: OutputStream, stdin: InputStream) {
+    bfRun(program, stdout.writer(), stdin.reader())
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
