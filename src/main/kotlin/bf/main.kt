@@ -43,7 +43,7 @@ private fun defaultCompiledRun(program: (Writer, Reader) -> Unit) {
 }
 
 private fun timeInterpreted(program: Iterable<BFOperation>) {
-    val w = System.out.writer()
+    val w = Writer.nullWriter()
     val r = Reader.nullReader()
     val time = measureTime {
         repeat(1000) {

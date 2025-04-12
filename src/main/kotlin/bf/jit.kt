@@ -191,17 +191,13 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         }
         is Input -> mw.run {
             // tape[pointer] = (byte) stdin.read()
-            // load tape[pointer]
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
 
-            // call stdin.read()
             visitVarInsn(ALOAD, input)
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Reader", "read", "()I", false)
-            // convert to byte
             visitInsn(I2B)
 
-            // store in tape[pointer]
             visitInsn(BASTORE)
         }
         is Loop -> mw.run {
