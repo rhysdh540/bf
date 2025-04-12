@@ -1,4 +1,4 @@
-import bf.bfOptimise
+import bf.opt.bfOptimise
 import bf.bfParse
 import bf.bfRun
 import kotlin.test.Test
