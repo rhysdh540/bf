@@ -4,6 +4,9 @@ import bf.BFOperation
 import bf.PointerMove
 import bf.ValueChange
 
+/**
+ * Merges consecutive [PointerMove] and [ValueChange] operations into a single operation.
+ */
 internal object RunLengthMerger : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
         var i = 0

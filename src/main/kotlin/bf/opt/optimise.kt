@@ -18,17 +18,6 @@ internal interface OptimisationPass {
     fun run(program: MutableList<BFOperation>)
 }
 
-/**
- * Optimises a Brainfuck program by removing unnecessary operations and combining where possible.
- *
- * Optimisations include:
- * - Combining consecutive `+` and `-` operations into one operation.
- * - Combining consecutive `>` and `<` operations into one operation.
- * - Replacing the pattern `[-]` and `[+]` with a [bf.SetToZero] operation.
- *
- * @param program The Brainfuck program to optimise.
- * @return The optimised Brainfuck program.
- */
 fun bfOptimise(program: Iterable<BFOperation>): List<BFOperation> {
     val program = program.toMutableList()
 

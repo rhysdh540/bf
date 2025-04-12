@@ -5,6 +5,9 @@ import bf.PointerMove
 import bf.ValueChange
 import bf.opt.OptimisationPass
 
+/**
+ * Removes [ValueChange] and [PointerMove] operations that have a value of 0.
+ */
 object ZeroRemover : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
         program.removeAll {

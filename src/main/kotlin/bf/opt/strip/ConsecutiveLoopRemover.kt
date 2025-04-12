@@ -5,6 +5,11 @@ import bf.Loop
 import bf.SetToZero
 import bf.opt.OptimisationPass
 
+/**
+ * Optimisation pass that removes consecutive loops and set-to-zero operations.
+ * When exiting a loop, it is guaranteed that the current cell is zero.
+ * So, any loops that immediately follow will never run and can be removed.
+ */
 internal object ConsecutiveLoopRemover : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
         var i = 0
