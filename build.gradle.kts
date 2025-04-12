@@ -57,6 +57,7 @@ tasks.register("proguard") {
             "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
             "-keep public class bf.* { *; }",
             "-dontobfuscate",
+            "-dontwarn", "java.lang.invoke.*",
             "-assumenosideeffects", "public class bf.DslKt\$bfProgram\$Impl { public kotlin.Unit getUnit(java.lang.Object); }",
         )
 

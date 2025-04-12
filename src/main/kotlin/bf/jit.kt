@@ -20,6 +20,26 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
 import kotlin.math.abs
 
+/**
+ * Options for customizing the jit
+ * @param localVariables whether to generate local variable names in the class
+ * @param selfContained whether to generate helper methods in the class (if false, will reference members in `bf.UtilKt` and `bf.SymbolsKt`)
+ * @param tapeSize the size of the tape, if [selfContained] is true
+ * @param mainMethod whether to generate a main method in the class,
+ *                   which when run will run the program with `System.in` and `System.out`
+ * @param packag the package to put the class in, if empty, will be in `bf.generated`
+ * @param export whether to export the class to a file in the current directory
+ */
+data class CompileOptions(
+    val localVariables: Boolean = false,
+    val selfContained: Boolean = false,
+    val tapeSize: Int = TAPE_SIZE,
+    val mainMethod: Boolean = false,
+    val packag: String = "bf.generated",
+
+    val export: Boolean = false,
+)
+
 private fun loadClass(bytes: ByteArray): Class<*> {
     val name = ClassReader(bytes).className.replace('/', '.')
     val cl = object : ClassLoader() {
@@ -40,19 +60,92 @@ private fun convertHandle(handle: MethodHandle): (Writer, Reader) -> Unit {
 }
 
 @OptIn(ExperimentalStdlibApi::class)
-fun bfCompile(program: Iterable<BFOperation>): (Writer, Reader) -> Unit {
-    val className = "bf/generated/BFProgram$${Objects.hash(System.nanoTime(), program, System.identityHashCode(program)).toHexString()}"
+fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOptions()): (Writer, Reader) -> Unit {
+    var className = "BFProgram$${Objects.hash(System.nanoTime(), program, System.identityHashCode(program)).toHexString()}"
+    if (opts.packag.isNotEmpty()) {
+        className = "${opts.packag.replace('.', '/')}/$className"
+    }
     val cw = ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES)
     cw.visit(V1_8, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
-    val mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", null, null)
+    var mw: MethodVisitor
+
+    if (opts.mainMethod) {
+        mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "main", "([Ljava/lang/String;)V", null, null)
+        mw.visitCode()
+        // new OutputStreamWriter(System.out)
+        mw.visitTypeInsn(NEW, "java/io/OutputStreamWriter")
+        mw.visitInsn(DUP)
+        mw.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;")
+        mw.visitMethodInsn(INVOKESPECIAL, "java/io/OutputStreamWriter", "<init>", "(Ljava/io/OutputStream;)V", false)
+        mw.visitVarInsn(ASTORE, 1)
+        mw.visitVarInsn(ALOAD, 1)
+        // new InputStreamReader(System.in)
+        mw.visitTypeInsn(NEW, "java/io/InputStreamReader")
+        mw.visitInsn(DUP)
+        mw.visitFieldInsn(GETSTATIC, "java/lang/System", "in", "Ljava/io/InputStream;")
+        mw.visitMethodInsn(INVOKESPECIAL, "java/io/InputStreamReader", "<init>", "(Ljava/io/InputStream;)V", false)
+
+        mw.visitMethodInsn(INVOKESTATIC, className, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", false)
+        mw.visitVarInsn(ALOAD, 1)
+        mw.visitMethodInsn(INVOKEVIRTUAL, "java/io/OutputStreamWriter", "flush", "()V", false)
+        mw.visitInsn(RETURN)
+
+        if (opts.localVariables) {
+            mw.visitParameter("args", 0)
+            mw.visitLocalVariable("out", "Ljava/io/Writer;", null, Label(), Label(), 1)
+        }
+
+        mw.visitMaxs(0, 0)
+        mw.visitEnd()
+    }
+
+    if (opts.selfContained) {
+        mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "wrap", "(III)I", null, null)
+        mw.visitCode()
+        mw.run {
+            visitVarInsn(ILOAD, 0)
+            visitVarInsn(ILOAD, 1)
+            visitInsn(IADD)
+
+            visitVarInsn(ILOAD, 2)
+            visitInsn(IREM)
+            visitInsn(DUP)
+            visitVarInsn(ISTORE, 0)
+
+            val l = Label()
+            visitJumpInsn(IFGE, l)
+            visitVarInsn(ILOAD, 0)
+            visitVarInsn(ILOAD, 2)
+            visitInsn(IADD)
+            visitInsn(IRETURN)
+
+            visitLabel(l)
+            visitVarInsn(ILOAD, 0)
+            visitInsn(IRETURN)
+
+            if (opts.localVariables) {
+                visitParameter("base", 0)
+                visitParameter("value", 0)
+                visitParameter("limit", 0)
+            }
+
+            visitMaxs(0, 0)
+            visitEnd()
+        }
+    }
+
+    mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", null, null)
     mw.visitCode()
 
     val output = 0
     val input = 1
 
-    // initialize tape: byte[bf.SymbolsKt.TAPE_SIZE]
     val tape = 2
-    mw.visitFieldInsn(GETSTATIC, "bf/SymbolsKt", "TAPE_SIZE", "I")
+    if (opts.selfContained) {
+        mw.pushIntConstant(opts.tapeSize)
+    } else {
+        mw.visitFieldInsn(GETSTATIC, "bf/SymbolsKt", "TAPE_SIZE", "I")
+    }
     mw.visitIntInsn(NEWARRAY, T_BYTE)
     mw.visitVarInsn(ASTORE, tape)
 
@@ -67,10 +160,14 @@ fun bfCompile(program: Iterable<BFOperation>): (Writer, Reader) -> Unit {
         is PointerMove -> mw.run {
             // pointer = bf.UtilKt.wrappingAdd(pointer, op.value, tape.length)
             visitVarInsn(ILOAD, pointer)
-            addIntConstant(op.value)
+            pushIntConstant(op.value)
             visitVarInsn(ALOAD, tape)
             visitInsn(ARRAYLENGTH)
-            visitMethodInsn(INVOKESTATIC, "bf/UtilKt", "wrappingAdd", "(III)I", false)
+            if (opts.selfContained) {
+                visitMethodInsn(INVOKESTATIC, className, "wrap", "(III)I", false)
+            } else {
+                visitMethodInsn(INVOKESTATIC, "bf/UtilKt", "wrappingAdd", "(III)I", false)
+            }
             visitVarInsn(ISTORE, pointer)
         }
         is ValueChange -> mw.run {
@@ -79,7 +176,7 @@ fun bfCompile(program: Iterable<BFOperation>): (Writer, Reader) -> Unit {
             visitVarInsn(ILOAD, pointer)
             visitInsn(DUP2)
             visitInsn(BALOAD)
-            addIntConstant(abs(op.value))
+            pushIntConstant(abs(op.value))
             visitInsn(if (op.value >= 0) IADD else ISUB)
             visitInsn(I2B)
             visitInsn(BASTORE)
@@ -140,9 +237,9 @@ fun bfCompile(program: Iterable<BFOperation>): (Writer, Reader) -> Unit {
         writeOp(op)
     }
 
-    if (System.getProperty("bf.debug.lvs", "false").toBoolean()) {
-        mw.visitParameter("stdout", 0)
-        mw.visitParameter("stdin", 0)
+    if (opts.localVariables) {
+        mw.visitParameter("out", 0)
+        mw.visitParameter("in", 0)
 
         mw.visitLocalVariable("tape", "[B", null, Label(), Label(), tape)
         mw.visitLocalVariable("pointer", "I", null, Label(), Label(), pointer)
@@ -154,7 +251,7 @@ fun bfCompile(program: Iterable<BFOperation>): (Writer, Reader) -> Unit {
     cw.visitEnd()
     val bytes = cw.toByteArray()
 
-    if (System.getProperty("bf.debug.export", "false").toBoolean()) {
+    if (opts.export) {
         val path = Path(".bf.out").resolve("${className}.class")
         path.parent.createDirectories()
         path.writeBytes(bytes)
@@ -176,7 +273,7 @@ private fun verifyClass(clazz: ByteArray) {
     }
 }
 
-private fun MethodVisitor.addIntConstant(value: Int) {
+private fun MethodVisitor.pushIntConstant(value: Int) {
     when (value) {
         -1 -> visitInsn(ICONST_M1)
         0 -> visitInsn(ICONST_0)
@@ -185,6 +282,18 @@ private fun MethodVisitor.addIntConstant(value: Int) {
         3 -> visitInsn(ICONST_3)
         4 -> visitInsn(ICONST_4)
         5 -> visitInsn(ICONST_5)
-        else -> visitLdcInsn(value)
+        else -> {
+            if (value in Byte.MIN_VALUE..Byte.MAX_VALUE) {
+                visitIntInsn(BIPUSH, value)
+            } else if (value in Short.MIN_VALUE..Short.MAX_VALUE) {
+                visitIntInsn(SIPUSH, value)
+            } else {
+                visitLdcInsn(value)
+            }
+        }
     }
+}
+
+private val clinit = run {
+    Path(".bf.out").toFile().deleteRecursively()
 }

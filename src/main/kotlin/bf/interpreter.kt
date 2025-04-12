@@ -9,10 +9,9 @@ fun bfRun(program: Iterable<BFOperation>,
           stdout: OutputStream = System.out,
           stdin: InputStream = System.`in`,
 ) {
-    stdout.bufferedWriter().use { w ->
-        stdin.bufferedReader().use { r ->
-            bfRun(program, w, r)
-        }
+    stdout.writer().let { w ->
+        bfRun(program, w, stdin.reader())
+        w.flush()
     }
 }
 

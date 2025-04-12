@@ -16,13 +16,6 @@ fun bfStringify(program: Iterable<BFOperation>): String {
 }
 
 fun Int.wrappingAdd(value: Int, limit: Int): Int {
-    var a = this + value
-    while (a >= limit) {
-        a -= limit
-    }
-    while (a < 0) {
-        a += limit
-    }
-
-    return a
+    val result = (this + value) % limit
+    return if (result < 0) result + limit else result
 }
