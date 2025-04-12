@@ -7,7 +7,7 @@ import java.io.Writer
 
 @OptIn(ExperimentalUnsignedTypes::class)
 fun bfRun(program: Iterable<BFOperation>,
-          stdout: Writer = System.out.writer(),
+          stdout: Writer = SysOutWriter,
           stdin: Reader = System.`in`.reader(),
 ) {
     runImpl(UByteArray(TAPE_SIZE), 0, program.toList().toTypedArray(), stdout, stdin)

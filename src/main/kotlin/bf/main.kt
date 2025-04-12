@@ -2,6 +2,7 @@ package bf
 
 import bf.opt.bfOptimise
 import bf.opt.bfStrip
+import java.io.OutputStreamWriter
 import kotlin.io.path.Path
 import kotlin.io.path.readText
 
@@ -116,9 +117,8 @@ private fun runProgram(
             export = export,
             localVariables = export
         ))
-        val w = System.out.writer()
-        compiled(w, System.`in`.reader())
-        w.flush()
+
+        compiled(SysOutWriter, System.`in`.reader())
     } else {
         bfRun(program)
     }

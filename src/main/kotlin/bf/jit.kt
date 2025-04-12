@@ -40,25 +40,6 @@ data class CompileOptions(
     val export: Boolean = false,
 )
 
-private fun loadClass(bytes: ByteArray): Class<*> {
-    val name = ClassReader(bytes).className.replace('/', '.')
-    val cl = object : ClassLoader() {
-        override fun findClass(name: String): Class<*> {
-            return defineClass(name, bytes, 0, bytes.size)
-        }
-    }
-
-    return cl.loadClass(name)
-}
-
-private fun convertHandle(handle: MethodHandle): (Writer, Reader) -> Unit {
-    assert(handle.type().returnType() == Void.TYPE)
-    assert(handle.type().parameterCount() == 2)
-    assert(handle.type().parameterType(0) == Writer::class.java)
-    assert(handle.type().parameterType(1) == Reader::class.java)
-    return { writer, reader -> handle.invoke(writer, reader) }
-}
-
 @OptIn(ExperimentalStdlibApi::class)
 fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOptions()): (Writer, Reader) -> Unit {
     var className = "BFProgram$${Objects.hash(System.nanoTime(), program, System.identityHashCode(program)).toHexString()}"
@@ -288,12 +269,33 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         path.writeBytes(bytes)
     }
 
+    // uncomment to ensure this generates valid classfiles
+    // but also 1.5x's the size of the jar
 //    verifyClass(bytes)
 
     val cl = loadClass(bytes)
     val lookup = MethodHandles.lookup()
     val method = lookup.findStatic(cl, "run", MethodType.methodType(Void.TYPE, Writer::class.java, Reader::class.java))
     return convertHandle(method)
+}
+
+private fun loadClass(bytes: ByteArray): Class<*> {
+    val name = ClassReader(bytes).className.replace('/', '.')
+    val cl = object : ClassLoader() {
+        override fun findClass(name: String): Class<*> {
+            return defineClass(name, bytes, 0, bytes.size)
+        }
+    }
+
+    return cl.loadClass(name)
+}
+
+private fun convertHandle(handle: MethodHandle): (Writer, Reader) -> Unit {
+    assert(handle.type().returnType() == Void.TYPE)
+    assert(handle.type().parameterCount() == 2)
+    assert(handle.type().parameterType(0) == Writer::class.java)
+    assert(handle.type().parameterType(1) == Reader::class.java)
+    return { writer, reader -> handle.invoke(writer, reader) }
 }
 
 private fun verifyClass(clazz: ByteArray) {

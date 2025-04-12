@@ -36,6 +36,9 @@ tasks.shadowJar {
     manifest.attributes["Main-Class"] = "bf.MainKt"
 
     exclude("**/*.kotlin_builtins")
+
+    relocate("org.objectweb.asm", "bf.asm")
+    relocate("kotlin", "bf.kotlin")
 }
 
 tasks.register("proguard") {
@@ -57,8 +60,9 @@ tasks.register("proguard") {
             "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
             "-keep public class bf.* { public *; }",
             "-dontobfuscate",
+            "-optimizationpasses", "5",
             "-dontwarn", "java.lang.invoke.*",
-            "-assumenosideeffects", "public class bf.DslKt\$bfProgram\$Impl { public kotlin.Unit getUnit(java.lang.Object); }",
+            "-assumenosideeffects", "public class bf.DslKt\$bfProgram\$Impl { kotlin.Unit getUnit(java.lang.Object); }",
         )
 
         val proguardConfig = ProguardConfiguration()

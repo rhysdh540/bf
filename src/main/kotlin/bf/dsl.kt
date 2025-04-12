@@ -17,7 +17,7 @@ fun bfProgram(block: ProgramDsl.() -> Unit): List<BFOperation> {
         val ops = mutableListOf<BFOperation>()
 
         // epic hack to make the below expression bodies
-        val Any?.unit: Unit get() = Unit
+        private val Any?.unit: Unit get() = Unit
 
         override fun moveRight(value: Int) = ops.add(PointerMove(value)).unit
         override fun moveLeft(value: Int) = ops.add(PointerMove(-value)).unit
