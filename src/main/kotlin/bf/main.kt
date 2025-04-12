@@ -68,8 +68,22 @@ fun main(args: Array<String>) {
         }
 
         if (arg.startsWith("-")) {
-            println("Unknown option: $arg")
-            return
+            for (i in 1 until arg.length) {
+                when (arg[i]) {
+                    'O' -> optimise = true
+                    'S' -> strip = true
+                    'c' -> compiled = true
+                    'i' -> compiled = false
+                    'e' -> export = true
+                    's' -> nextIsString = true
+                    else -> {
+                        println("Unknown argument: ${arg[i]}")
+                        return
+                    }
+                }
+            }
+
+            continue
         }
 
         if (arg.endsWith(".b") || arg.endsWith(".bf")) {
