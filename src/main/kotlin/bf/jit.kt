@@ -286,7 +286,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         path.writeBytes(bytes)
     }
 
-    verifyClass(bytes)
+//    verifyClass(bytes)
 
     val cl = loadClass(bytes)
     val lookup = MethodHandles.lookup()
@@ -294,13 +294,13 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     return convertHandle(method)
 }
 
-private fun verifyClass(clazz: ByteArray) {
-    try {
-        CheckClassAdapter.verify(ClassReader(clazz), false, PrintWriter(Writer.nullWriter()))
-    } catch (_: AnalyzerException) {
-        CheckClassAdapter.verify(ClassReader(clazz), true, PrintWriter(System.err))
-    }
-}
+//private fun verifyClass(clazz: ByteArray) {
+//    try {
+//        CheckClassAdapter.verify(ClassReader(clazz), false, PrintWriter(Writer.nullWriter()))
+//    } catch (_: AnalyzerException) {
+//        CheckClassAdapter.verify(ClassReader(clazz), true, PrintWriter(System.err))
+//    }
+//}
 
 private fun MethodVisitor.pushIntConstant(value: Int) {
     when (value) {
