@@ -18,7 +18,7 @@ import java.lang.invoke.MethodType
 import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
-import kotlin.math.abs
+import kotlin.math.absoluteValue
 
 /**
  * Options for customizing the jit
@@ -156,8 +156,32 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
     val programList = program.toList()
 
-    fun writeOp(op: BFOperation): Unit = when(op) {
-        is PointerMove -> mw.run {
+    fun MethodVisitor.writeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit) {
+        // method signature: private static int <name>(Writer out, Reader in, byte[] tape, int pointer)
+        // so the lvt indices are the same hopefully
+
+        visitCode()
+
+        for (op in loop) {
+            writeOp(op)
+        }
+
+        visitVarInsn(ILOAD, pointer)
+        visitInsn(IRETURN)
+
+        if (opts.localVariables) {
+            visitParameter("out", 0)
+            visitParameter("in", 0)
+            visitParameter("tape", 0)
+            visitParameter("pointer", 0)
+        }
+
+        visitMaxs(0, 0)
+        visitEnd()
+    }
+
+    fun MethodVisitor.writeOp(op: BFOperation): Unit = when(op) {
+        is PointerMove -> {
             // pointer = bf.UtilKt.wrappingAdd(pointer, op.value, tape.length)
             visitVarInsn(ILOAD, pointer)
             pushIntConstant(op.value)
@@ -170,18 +194,18 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             }
             visitVarInsn(ISTORE, pointer)
         }
-        is ValueChange -> mw.run {
+        is ValueChange -> {
             // tape[pointer] += op.value
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
             visitInsn(DUP2)
             visitInsn(BALOAD)
-            pushIntConstant(abs(op.value))
+            pushIntConstant(op.value.absoluteValue)
             visitInsn(if (op.value >= 0) IADD else ISUB)
             visitInsn(I2B)
             visitInsn(BASTORE)
         }
-        is Print -> mw.run {
+        is Print -> {
             // stdout.write(tape[pointer])
             visitVarInsn(ALOAD, output)
             visitVarInsn(ALOAD, tape)
@@ -189,7 +213,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitInsn(BALOAD)
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Writer", "write", "(I)V", false)
         }
-        is Input -> mw.run {
+        is Input -> {
             // tape[pointer] = (byte) stdin.read()
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
@@ -200,27 +224,36 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
             visitInsn(BASTORE)
         }
-        is Loop -> mw.run {
+        is Loop -> {
             // while (tape[pointer] != 0) { ... }
             val loopStart = Label()
             val loopEnd = Label()
-            mw.visitLabel(loopStart)
+            visitLabel(loopStart)
             // if (tape[pointer] == 0) break
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
             visitInsn(BALOAD)
             visitJumpInsn(IFEQ, loopEnd)
 
-            // run the loop body
-            for (op in op.contents) {
-                writeOp(op)
-            }
+            // put the loop body in a separate method because the vm can't handle ginormous methods very well
+            val methodName = "loopBody$${Objects.hash(System.nanoTime(), op, System.identityHashCode(op)).toHexString()}"
+            val desc = "(Ljava/io/Writer;Ljava/io/Reader;[BI)I"
+            cw.visitMethod(ACC_PRIVATE or ACC_STATIC, methodName, desc, null, null)
+                .writeLoopBody(op, MethodVisitor::writeOp)
+
+            // call the loop body
+            visitVarInsn(ALOAD, output)
+            visitVarInsn(ALOAD, input)
+            visitVarInsn(ALOAD, tape)
+            visitVarInsn(ILOAD, pointer)
+            visitMethodInsn(INVOKESTATIC, className, methodName, desc, false)
+            visitVarInsn(ISTORE, pointer)
 
             // jump back to the start of the loop
-            mw.visitJumpInsn(GOTO, loopStart)
-            mw.visitLabel(loopEnd)
+            visitJumpInsn(GOTO, loopStart)
+            visitLabel(loopEnd)
         }
-        is SetToZero -> mw.run {
+        is SetToZero -> {
             // tape[pointer] = 0
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
@@ -230,7 +263,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     }
 
     for (op in programList) {
-        writeOp(op)
+        mw.writeOp(op)
     }
 
     if (opts.localVariables) {
