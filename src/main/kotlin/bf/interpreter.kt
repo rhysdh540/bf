@@ -29,7 +29,7 @@ private fun runImpl(tape: UByteArray, pointer: Int,
         val op = program[insn]
         when (op) {
             is PointerMove -> pointer = pointer.wrappingAdd(op.value, TAPE_SIZE)
-            is ValueChange -> tape[pointer] = tape[pointer].toInt().wrappingAdd(op.value, 256).toUByte()
+            is ValueChange -> tape[pointer + op.offset] = tape[pointer + op.offset].toInt().wrappingAdd(op.value, 256).toUByte()
             is Print -> stdout.write(tape[pointer].toInt())
             is Input -> tape[pointer] = stdin.read().toUByte()
             is Loop -> {

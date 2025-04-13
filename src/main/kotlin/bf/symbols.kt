@@ -39,7 +39,7 @@ data class PointerMove(val value: Int) : BFOperation {
  * Represents a command to increment or decrement the value at the current data pointer.
  * @param value The amount to increment or decrement the value. Positive values increment, negative values decrement.
  */
-data class ValueChange(val value: Int) : BFOperation {
+data class ValueChange(val value: Int, val offset: Int = 0) : BFOperation {
     companion object {
         val Plus = ValueChange(1)
         val Minus = ValueChange(-1)
@@ -47,11 +47,13 @@ data class ValueChange(val value: Int) : BFOperation {
 
     override fun toProgramString(): String {
         if (value == 0) return ""
-        return if (value > 0) {
+        val action = if (value > 0) {
             "+".repeat(value)
         } else {
             "-".repeat(-value)
         }
+
+        return PointerMove(offset).toProgramString() + action + PointerMove(-offset).toProgramString()
     }
 }
 

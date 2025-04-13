@@ -24,7 +24,7 @@ internal object ConstantReplacer : OptimisationPass {
                 program[i] = SetToConstant()
 
                 // If the next operation is a ValueChange, we can inline it
-                if (i != program.lastIndex && program[i + 1] is ValueChange) {
+                if (i != program.lastIndex && program[i + 1].let { it is ValueChange && it.offset == 0 }) {
                     val op2 = program[i + 1] as ValueChange
                     program[i + 1] = SetToConstant(op2.value.toUByte())
                 }
@@ -37,6 +37,6 @@ internal object ConstantReplacer : OptimisationPass {
     private val Loop.isZeroReplaceable: Boolean
         get() {
             val op = this.singleOrNull() ?: return false
-            return op is ValueChange && abs(op.value) == 1
+            return op is ValueChange && abs(op.value) == 1 && op.offset == 0
         }
 }

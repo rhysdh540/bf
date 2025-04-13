@@ -176,14 +176,19 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitVarInsn(ISTORE, pointer)
         }
         is ValueChange -> {
-            // tape[pointer] += op.value
+            // tape[pointer + op.offset] += op.value
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
+            pushIntConstant(op.offset)
+            visitInsn(IADD)
+
             visitInsn(DUP2)
             visitInsn(BALOAD)
+
             pushIntConstant(op.value.absoluteValue)
             visitInsn(if (op.value >= 0) IADD else ISUB)
             visitInsn(I2B)
+
             visitInsn(BASTORE)
         }
         is Print -> {
