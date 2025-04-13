@@ -24,8 +24,8 @@ fun bfProgram(block: ProgramDsl.() -> Unit): List<BFOperation> {
         override fun moveLeft(value: Int) = ops.add(PointerMove(-value)).unit
         override fun increment(value: Int) = ops.add(ValueChange(value)).unit
         override fun decrement(value: Int) = ops.add(ValueChange(-value)).unit
-        override fun print() = ops.add(Print).unit
-        override fun input() = ops.add(Input).unit
+        override fun print() = ops.add(Print()).unit
+        override fun input() = ops.add(Input()).unit
         override fun set(constant: UByte) = ops.add(SetToConstant(constant)).unit
 
         override fun loop(block: ProgramDsl.() -> Unit) = ops.add(Loop(bfProgram(block))).unit

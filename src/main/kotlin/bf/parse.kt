@@ -38,8 +38,8 @@ fun bfParse(program: CharArray): List<BFOperation> {
             '<' -> current().add(PointerMove.Left)
             '+' -> current().add(ValueChange.Plus)
             '-' -> current().add(ValueChange.Minus)
-            '.' -> current().add(Print)
-            ',' -> current().add(Input)
+            '.' -> current().add(Print())
+            ',' -> current().add(Input())
             '[' -> {
                 loops.add(mutableListOf())
                 lastLoopStart = i

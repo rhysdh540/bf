@@ -30,14 +30,14 @@ private fun runImpl(tape: UByteArray, pointer: Int,
         when (op) {
             is PointerMove -> pointer = pointer.wrappingAdd(op.value, TAPE_SIZE)
             is ValueChange -> tape[pointer + op.offset] = tape[pointer + op.offset].toInt().wrappingAdd(op.value, 256).toUByte()
-            is Print -> stdout.write(tape[pointer].toInt())
-            is Input -> tape[pointer] = stdin.read().toUByte()
+            is Print -> stdout.write(tape[pointer + op.offset].toInt())
+            is Input -> tape[pointer + op.offset] = stdin.read().toUByte()
             is Loop -> {
                 while (tape[pointer].toInt() != 0) {
                     pointer = runImpl(tape, pointer, op.contents, stdout, stdin)
                 }
             }
-            is SetToConstant -> tape[pointer] = op.value.toUByte()
+            is SetToConstant -> tape[pointer + op.offset] = op.value.toUByte()
         }
         insn++
     }

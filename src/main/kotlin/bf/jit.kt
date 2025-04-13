@@ -179,8 +179,10 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             // tape[pointer + op.offset] += op.value
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
-            pushIntConstant(op.offset)
-            visitInsn(IADD)
+            if (op.offset != 0) {
+                pushIntConstant(op.offset)
+                visitInsn(IADD)
+            }
 
             visitInsn(DUP2)
             visitInsn(BALOAD)
@@ -192,19 +194,30 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitInsn(BASTORE)
         }
         is Print -> {
-            // stdout.write(tape[pointer])
+            // stdout.write(tape[pointer + op.offset])
             visitVarInsn(ALOAD, output)
+
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
+            if (op.offset != 0) {
+                pushIntConstant(op.offset)
+                visitInsn(IADD)
+            }
             visitInsn(BALOAD)
+
             visitIntInsn(SIPUSH, 0xFF)
             visitInsn(IAND)
+
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Writer", "write", "(I)V", false)
         }
         is Input -> {
-            // tape[pointer] = (byte) stdin.read()
+            // tape[pointer + op.offset] = (byte) stdin.read()
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
+            if (op.offset != 0) {
+                pushIntConstant(op.offset)
+                visitInsn(IADD)
+            }
 
             visitVarInsn(ALOAD, input)
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Reader", "read", "()I", false)
@@ -242,9 +255,13 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitLabel(loopEnd)
         }
         is SetToConstant -> {
-            // tape[pointer] = op.value
+            // tape[pointer + op.offset] = op.value
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
+            if (op.offset != 0) {
+                pushIntConstant(op.offset)
+                visitInsn(IADD)
+            }
             pushIntConstant(op.value.toInt())
             visitInsn(BASTORE)
         }

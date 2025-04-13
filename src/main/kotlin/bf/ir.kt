@@ -60,19 +60,23 @@ data class ValueChange(val value: Int, val offset: Int = 0) : BFOperation {
 /**
  * Represents a command to output the value at the current data pointer.
  */
-object Print : BFOperation {
+data class Print(val offset: Int = 0) : BFOperation {
     override fun toString() = "Print"
 
-    override fun toProgramString() = "."
+    override fun toProgramString(): String {
+        return PointerMove(offset).toProgramString() + "." + PointerMove(-offset).toProgramString()
+    }
 }
 
 /**
  * Represents a command to input a value and store it at the current data pointer.
  */
-object Input : BFOperation {
+data class Input(val offset: Int = 0) : BFOperation {
     override fun toString() = "Input"
 
-    override fun toProgramString() = ","
+    override fun toProgramString(): String {
+        return PointerMove(offset).toProgramString() + "," + PointerMove(-offset).toProgramString()
+    }
 }
 
 /**
@@ -95,7 +99,7 @@ data class Loop(internal val contents: Array<BFOperation>) : BFOperation, List<B
  * Represents a command to set the value at the current data pointer to a constant.
  * This isn't a standard command, but is used in [optimised][bf.opt.bfOptimise] versions of programs.
  */
-data class SetToConstant(val value: UByte = 0u) : BFOperation {
+data class SetToConstant(val value: UByte = 0u, val offset: Int = 0) : BFOperation {
     override fun toProgramString(): String {
         return "[-]" + ValueChange(value.toInt()).toProgramString()
     }
