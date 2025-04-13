@@ -2,7 +2,7 @@ package bf.opt.strip
 
 import bf.BFOperation
 import bf.Loop
-import bf.SetToZero
+import bf.SetToConstant
 import bf.opt.OptimisationPass
 
 /**
@@ -23,5 +23,5 @@ internal object ConsecutiveLoopRemover : OptimisationPass {
     }
 
     private val BFOperation.isLoop: Boolean
-        get() = this is Loop || this is SetToZero
+        get() = this is Loop || (this is SetToConstant && this.value.toInt() == 0)
 }

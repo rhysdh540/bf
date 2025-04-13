@@ -93,6 +93,7 @@ kotlin {
 for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
     if (file.isFile && file.extension == "b") {
         val name = file.nameWithoutExtension
+
         tasks.register<JavaExec>(name) {
             group = "examples"
             description = "Run the file ${name}.b"
@@ -100,6 +101,11 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
                 "-OSce",
                 file.absolutePath
             )
+
+            val input = file.resolveSibling("${name}.in")
+            if (input.exists()) {
+                standardInput = input.inputStream()
+            }
 
             classpath = sourceSets["main"].runtimeClasspath
             mainClass.set("bf.MainKt")

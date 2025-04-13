@@ -1,18 +1,10 @@
 package bf
 
-import java.io.OutputStreamWriter
-import kotlin.math.absoluteValue
+import java.io.FilterWriter
 
 fun bfStringify(program: Iterable<BFOperation>): String {
-    return program.joinToString("") { op ->
-        when (op) {
-            is PointerMove -> (if (op.value > 0) ">" else "<").repeat(op.value.absoluteValue)
-            is ValueChange -> (if (op.value > 0) "+" else "-").repeat(op.value.absoluteValue)
-            Print -> "."
-            Input -> ","
-            is Loop -> "[${bfStringify(op)}]"
-            SetToZero -> "[-]"
-        }
+    return program.joinToString("") {
+        it.toProgramString()
     }
 }
 
@@ -24,9 +16,8 @@ fun Int.wrappingAdd(value: Int, limit: Int): Int {
 /**
  * Flushes the output stream after every write to make output smoother
  */
-object SysOutWriter : OutputStreamWriter(System.out) {
+object SysOutWriter : FilterWriter(nullWriter()) {
     override fun write(c: Int) {
-        super.write(c)
-        flush()
+        print(c.toChar())
     }
 }

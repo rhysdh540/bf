@@ -236,11 +236,11 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitJumpInsn(GOTO, loopStart)
             visitLabel(loopEnd)
         }
-        is SetToZero -> {
-            // tape[pointer] = 0
+        is SetToConstant -> {
+            // tape[pointer] = op.value
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
-            visitInsn(ICONST_0)
+            pushIntConstant(op.value.toInt())
             visitInsn(BASTORE)
         }
     }

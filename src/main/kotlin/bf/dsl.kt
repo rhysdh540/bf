@@ -7,7 +7,8 @@ interface ProgramDsl {
     fun decrement(value: Int = 1)
     fun print()
     fun input()
-    fun setToZero()
+    fun set(constant: UByte)
+    fun setToZero() = set(0u)
 
     fun loop(block: ProgramDsl.() -> Unit)
 }
@@ -25,7 +26,7 @@ fun bfProgram(block: ProgramDsl.() -> Unit): List<BFOperation> {
         override fun decrement(value: Int) = ops.add(ValueChange(-value)).unit
         override fun print() = ops.add(Print).unit
         override fun input() = ops.add(Input).unit
-        override fun setToZero() = ops.add(SetToZero).unit
+        override fun set(constant: UByte) = ops.add(SetToConstant(constant)).unit
 
         override fun loop(block: ProgramDsl.() -> Unit) = ops.add(Loop(bfProgram(block))).unit
     }

@@ -2,7 +2,6 @@ package bf
 
 import bf.opt.bfOptimise
 import bf.opt.bfStrip
-import java.io.OutputStreamWriter
 import kotlin.io.path.Path
 import kotlin.io.path.readText
 

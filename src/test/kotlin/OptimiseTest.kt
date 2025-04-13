@@ -52,6 +52,25 @@ class OptimiseTest {
     }
 
     @Test
+    fun testNonZero() {
+        val program = "++++[-]+++[.-]"
+        val expected = bfProgram {
+            increment(4)
+            set(3u)
+            loop {
+                print()
+                decrement()
+            }
+        }
+
+        val parsed = bfParse(program)
+        val optimised = bfOptimise(parsed)
+
+        bfAssertEquals(parsed, optimised)
+        bfAssertEquals(expected, optimised)
+    }
+
+    @Test
     fun testStripping() {
         val program = "++++++>++++++[-]>++++++"
         assertEquals(listOf(), bfStrip(bfOptimise(bfParse(program))))

@@ -37,7 +37,7 @@ private fun runImpl(tape: UByteArray, pointer: Int,
                     pointer = runImpl(tape, pointer, op.contents, stdout, stdin)
                 }
             }
-            SetToZero -> tape[pointer] = 0u
+            is SetToConstant -> tape[pointer] = op.value.toUByte()
         }
         insn++
     }
