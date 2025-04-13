@@ -327,6 +327,7 @@ private fun MethodVisitor.pushIntConstant(value: Int) {
     }
 }
 
+@Suppress("unused")
 private val clinit = run {
     Path(".bf.out").toFile().deleteRecursively()
 }

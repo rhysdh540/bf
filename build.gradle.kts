@@ -104,7 +104,9 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
 
             val input = file.resolveSibling("${name}.in")
             if (input.exists()) {
-                standardInput = input.inputStream()
+                doFirst {
+                    standardInput = input.inputStream()
+                }
             }
 
             classpath = sourceSets["main"].runtimeClasspath
