@@ -125,7 +125,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     if (opts.selfContained) {
         mw.pushIntConstant(opts.tapeSize)
     } else {
-        mw.visitFieldInsn(GETSTATIC, "bf/SymbolsKt", "TAPE_SIZE", "I")
+        mw.visitFieldInsn(GETSTATIC, "bf/IrKt", "TAPE_SIZE", "I")
     }
     mw.visitIntInsn(NEWARRAY, T_BYTE)
     mw.visitVarInsn(ASTORE, tape)
