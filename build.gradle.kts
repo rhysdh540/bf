@@ -62,6 +62,7 @@ tasks.register("proguard") {
             "-dontobfuscate",
             "-optimizationpasses", "5",
             "-dontwarn", "java.lang.invoke.*",
+            "-dontnote",
             "-assumenosideeffects", "public class bf.DslKt\$bfProgram\$Impl { kotlin.Unit getUnit(java.lang.Object); }",
         )
 

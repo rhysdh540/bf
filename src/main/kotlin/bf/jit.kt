@@ -130,30 +130,6 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
     val programList = program.toList()
 
-    fun MethodVisitor.writeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit) {
-        // method signature: private static int <name>(Writer out, Reader in, byte[] tape, int pointer)
-        // so the lvt indices are the same hopefully
-
-        visitCode()
-
-        for (op in loop) {
-            writeOp(op)
-        }
-
-        visitVarInsn(ILOAD, pointer)
-        visitInsn(IRETURN)
-
-        if (opts.localVariables) {
-            visitParameter("out", 0)
-            visitParameter("in", 0)
-            visitParameter("tape", 0)
-            visitParameter("pointer", 0)
-        }
-
-        visitMaxs(0, 0)
-        visitEnd()
-    }
-
     fun MethodVisitor.addOffset(offset: Int) {
         if (offset != 0) {
             pushIntConstant(offset)
@@ -238,19 +214,43 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitInsn(BALOAD)
             visitJumpInsn(IFEQ, loopEnd)
 
-            // put the loop body in a separate method because the vm can't handle ginormous methods very well
-            val methodName = "loopBody$${Objects.hash(System.nanoTime(), op, System.identityHashCode(op)).toHexString()}"
-            val desc = "(Ljava/io/Writer;Ljava/io/Reader;[BI)I"
-            cw.visitMethod(ACC_PRIVATE or ACC_STATIC, methodName, desc, null, null)
-                .writeLoopBody(op, MethodVisitor::writeOp)
+            if (op.any { it is Loop }) {
+                // put the loop body in a separate method because the vm can't handle ginormous methods very well
+                val methodName = "loopBody$${Objects.hash(System.nanoTime(), op, System.identityHashCode(op)).toHexString()}"
+                val desc = "(Ljava/io/Writer;Ljava/io/Reader;[BI)I"
+                cw.visitMethod(ACC_PRIVATE or ACC_STATIC, methodName, desc, null, null).run {
+                    // method signature: private static int <name>(Writer out, Reader in, byte[] tape, int pointer)
+                    // so the lvt indices are the same hopefully
+                    visitCode()
 
-            // call the loop body
-            visitVarInsn(ALOAD, output)
-            visitVarInsn(ALOAD, input)
-            visitVarInsn(ALOAD, tape)
-            visitVarInsn(ILOAD, pointer)
-            visitMethodInsn(INVOKESTATIC, className, methodName, desc, false)
-            visitVarInsn(ISTORE, pointer)
+                    for (op in op) {
+                        writeOp(op)
+                    }
+
+                    visitVarInsn(ILOAD, pointer)
+                    visitInsn(IRETURN)
+                    if (opts.localVariables) {
+                        visitParameter("out", 0)
+                        visitParameter("in", 0)
+                        visitParameter("tape", 0)
+                        visitParameter("pointer", 0)
+                    }
+                    visitMaxs(0, 0)
+                    visitEnd()
+                }
+
+                // call the loop body
+                visitVarInsn(ALOAD, output)
+                visitVarInsn(ALOAD, input)
+                visitVarInsn(ALOAD, tape)
+                visitVarInsn(ILOAD, pointer)
+                visitMethodInsn(INVOKESTATIC, className, methodName, desc, false)
+                visitVarInsn(ISTORE, pointer)
+            } else {
+                for (op in op) {
+                    writeOp(op)
+                }
+            }
 
             // jump back to the start of the loop
             visitJumpInsn(GOTO, loopStart)
