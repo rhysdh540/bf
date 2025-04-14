@@ -28,6 +28,9 @@ import kotlin.math.absoluteValue
  * @param mainMethod whether to generate a main method in the class,
  *                   which when run will run the program with `System.in` and `System.out`
  * @param packag the package to put the class in, if empty, will be in `bf.generated`
+ *
+ * @param overflowProtection whether to wrap tape accesses. Slows down the program significantly, but can prevent crashes.
+ *
  * @param export whether to export the class to a file in the current directory
  */
 data class CompileOptions(
@@ -36,6 +39,8 @@ data class CompileOptions(
     val tapeSize: Int = TAPE_SIZE,
     val mainMethod: Boolean = false,
     val packag: String = "bf.generated",
+
+    val overflowProtection: Boolean = false,
 
     val export: Boolean = false,
 )
@@ -46,8 +51,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     if (opts.packag.isNotEmpty()) {
         className = "${opts.packag.replace('.', '/')}/$className"
     }
-    val cw = ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES)
-    cw.visit(V1_8, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
+    val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
+    cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
     var mw: MethodVisitor
 
     if (opts.mainMethod) {
@@ -81,34 +86,22 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     }
 
     if (opts.selfContained) {
-        mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "wrap", "(III)I", null, null)
+        mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "wrap", "(II)I", null, null)
         mw.visitCode()
         mw.run {
+            // method signature: private static int wrap(int pointer, int length)
+            // return pointer < 0 ? pointer + length : pointer
+
+            val negative = Label()
+            visitVarInsn(ILOAD, 0)
+            visitJumpInsn(IFLT, negative)
+            visitVarInsn(ILOAD, 0)
+            visitInsn(IRETURN)
+            visitLabel(negative)
             visitVarInsn(ILOAD, 0)
             visitVarInsn(ILOAD, 1)
             visitInsn(IADD)
-
-            visitVarInsn(ILOAD, 2)
-            visitInsn(IREM)
-            visitInsn(DUP)
-            visitVarInsn(ISTORE, 0)
-
-            val l = Label()
-            visitJumpInsn(IFGE, l)
-            visitVarInsn(ILOAD, 0)
-            visitVarInsn(ILOAD, 2)
-            visitInsn(IADD)
             visitInsn(IRETURN)
-
-            visitLabel(l)
-            visitVarInsn(ILOAD, 0)
-            visitInsn(IRETURN)
-
-            if (opts.localVariables) {
-                visitParameter("base", 0)
-                visitParameter("value", 0)
-                visitParameter("limit", 0)
-            }
 
             visitMaxs(0, 0)
             visitEnd()
@@ -161,28 +154,43 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         visitEnd()
     }
 
+    fun MethodVisitor.addOffset(offset: Int) {
+        if (offset != 0) {
+            pushIntConstant(offset)
+            visitInsn(IADD)
+
+            if (opts.overflowProtection) {
+                visitVarInsn(ALOAD, tape)
+                visitInsn(ARRAYLENGTH)
+                visitInsn(IREM)
+                if (offset < 0) {
+                    if (!opts.selfContained) {
+                        pushIntConstant(0)
+                    }
+                    visitVarInsn(ALOAD, tape)
+                    visitInsn(ARRAYLENGTH)
+                    if (opts.selfContained) {
+                        visitMethodInsn(INVOKESTATIC, className, "wrap", "(II)I", false)
+                    } else {
+                        visitMethodInsn(INVOKESTATIC, "bf/UtilKt", "wrappingAdd", "(III)I", false)
+                    }
+                }
+            }
+        }
+    }
+
     fun MethodVisitor.writeOp(op: BFOperation): Unit = when(op) {
         is PointerMove -> {
-            // pointer = bf.UtilKt.wrappingAdd(pointer, op.value, tape.length)
+            // pointer += op.value
             visitVarInsn(ILOAD, pointer)
-            pushIntConstant(op.value)
-            visitVarInsn(ALOAD, tape)
-            visitInsn(ARRAYLENGTH)
-            if (opts.selfContained) {
-                visitMethodInsn(INVOKESTATIC, className, "wrap", "(III)I", false)
-            } else {
-                visitMethodInsn(INVOKESTATIC, "bf/UtilKt", "wrappingAdd", "(III)I", false)
-            }
+            addOffset(op.value)
             visitVarInsn(ISTORE, pointer)
         }
         is ValueChange -> {
             // tape[pointer + op.offset] += op.value
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
-            if (op.offset != 0) {
-                pushIntConstant(op.offset)
-                visitInsn(IADD)
-            }
+            addOffset(op.offset)
 
             visitInsn(DUP2)
             visitInsn(BALOAD)
@@ -199,10 +207,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
-            if (op.offset != 0) {
-                pushIntConstant(op.offset)
-                visitInsn(IADD)
-            }
+            addOffset(op.offset)
             visitInsn(BALOAD)
 
             visitIntInsn(SIPUSH, 0xFF)
@@ -214,10 +219,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             // tape[pointer + op.offset] = (byte) stdin.read()
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
-            if (op.offset != 0) {
-                pushIntConstant(op.offset)
-                visitInsn(IADD)
-            }
+            addOffset(op.offset)
 
             visitVarInsn(ALOAD, input)
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Reader", "read", "()I", false)
@@ -258,10 +260,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             // tape[pointer + op.offset] = op.value
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
-            if (op.offset != 0) {
-                pushIntConstant(op.offset)
-                visitInsn(IADD)
-            }
+            addOffset(op.offset)
             pushIntConstant(op.value.toInt())
             visitInsn(BASTORE)
         }
@@ -290,10 +289,6 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         path.parent.createDirectories()
         path.writeBytes(bytes)
     }
-
-    // uncomment to ensure this generates valid classfiles
-    // but also 1.5x's the size of the jar
-//    verifyClass(bytes)
 
     val cl = loadClass(bytes)
     val lookup = MethodHandles.lookup()

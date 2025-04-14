@@ -10,19 +10,31 @@ fun main(args: Array<String>) {
         println("""
             |Usage: bf.jar <program.b>
             |Options:
-            |       --optimise, -O      Optimise the intermediate representation of the following programs
-            |       --strip, -S         Strip unused code from the following programs
-            |       --compile, -c       Compile the following programs to java bytecode
-            |       --interpreted, -i   Run the following programs in interpreted mode (default)
-            |       --string, -s        Run the next argument as a string
-            |       --export, -e        Export the following programs to a file in `.bf.out`
-            |       --no-export         Do not export the following programs
+            |       --help, -h 
+            |               Show this help message
+            |       --overflow-protection, -o 
+            |               Enable overflow protection for the following programs
+            |       --optimise, -O            
+            |               Optimise the intermediate representation of the following programs
+            |       --strip, -S               
+            |               Strip unused code from the following programs
+            |       --compile, -c             
+            |               Compile the following programs to java bytecode
+            |       --interpreted, -i         
+            |               Run the following programs in interpreted mode (default)
+            |       --string, -s              
+            |               Run the next argument as a string
+            |       --export, -e              
+            |               Export the following programs to a file in `.bf.out`
+            |       --no-export               
+            |               Do not export the following programs
         """.trimMargin())
         return
     }
 
     var compiled = false
     var nextIsString = false
+    var overflowProtection = false
     var optimise = false
     var strip = false
     var export = false
@@ -31,12 +43,21 @@ fun main(args: Array<String>) {
         if (nextIsString) {
             nextIsString = false
             val program = arg
-            runProgram(program, compiled, optimise, strip, export)
+            runProgram(program, compiled, optimise, strip, CompileOptions(
+                localVariables = export,
+                export = export,
+                overflowProtection = overflowProtection,
+            ))
             continue
         }
 
         if (arg in arrayOf("--optimise", "-O")) {
             optimise = true
+            continue
+        }
+
+        if (arg in arrayOf("--overflow-protection", "-o")) {
+            overflowProtection = true
             continue
         }
 
@@ -90,7 +111,11 @@ fun main(args: Array<String>) {
 
         if (arg.endsWith(".b") || arg.endsWith(".bf")) {
             val program = Path(arg).readText()
-            runProgram(program, compiled, optimise, strip, export)
+            runProgram(program, compiled, optimise, strip, CompileOptions(
+                localVariables = export,
+                export = export,
+                overflowProtection = overflowProtection,
+            ))
         } else {
             println("Unknown argument: $arg")
             return
@@ -103,7 +128,7 @@ private fun runProgram(
     compile: Boolean,
     optimise: Boolean,
     strip: Boolean,
-    export: Boolean
+    opts: CompileOptions
 ) {
     var program = bfParse(literal)
     if (optimise)
@@ -112,10 +137,7 @@ private fun runProgram(
         program = bfStrip(program)
 
     if (compile) {
-        val compiled = bfCompile(program, CompileOptions(
-            export = export,
-            localVariables = export
-        ))
+        val compiled = bfCompile(program, opts)
 
         compiled(SysOutWriter, System.`in`.reader())
     } else {
