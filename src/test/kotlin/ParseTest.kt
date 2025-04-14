@@ -1,6 +1,7 @@
 import bf.bfParse
 import bf.bfProgram
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class ParseTest {
     @Test
@@ -19,7 +20,7 @@ class ParseTest {
         }
 
         val parsed = bfParse(program)
-        bfAssertEquals(parsed, expected)
+        assertEquals(parsed, expected)
     }
 
     @Test
@@ -38,6 +39,6 @@ class ParseTest {
         }
 
         val parsed = bfParse(program)
-        bfAssertEquals(parsed, expected)
+        assertEquals(parsed, expected)
     }
 }

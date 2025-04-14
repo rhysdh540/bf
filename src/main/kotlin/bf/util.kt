@@ -2,12 +2,6 @@ package bf
 
 import java.io.FilterWriter
 
-fun bfStringify(program: Iterable<BFOperation>): String {
-    return program.joinToString("") {
-        it.toProgramString()
-    }
-}
-
 fun Int.wrappingAdd(value: Int, limit: Int): Int {
     val result = (this + value) % limit
     return if (result < 0) result + limit else result

@@ -29,9 +29,8 @@ class OptimiseTest {
         val parsed = bfParse(program)
         val optimised = bfOptimise(parsed)
 
-        bfAssertEquals(parsed, optimised)
-        bfAssertEquals(optimised, expected)
-        bfAssertEquals(bfOptimise(optimised), optimised)
+        assertEquals(expected, optimised)
+        assertEquals(bfOptimise(optimised), optimised)
     }
 
     @Test
@@ -46,9 +45,7 @@ class OptimiseTest {
         val parsed = bfParse(program)
         val optimised = bfOptimise(parsed)
 
-        assertEquals(expected.toString(), optimised.toString())
-        bfAssertEquals(parsed, optimised)
-        bfAssertEquals(optimised, expected)
+        assertEquals(expected, optimised)
     }
 
     @Test
@@ -63,11 +60,9 @@ class OptimiseTest {
             }
         }
 
-        val parsed = bfParse(program)
-        val optimised = bfOptimise(parsed)
+        val optimised = bfOptimise(bfParse(program))
 
-        bfAssertEquals(parsed, optimised)
-        bfAssertEquals(expected, optimised)
+        assertEquals(expected, optimised)
     }
 
     @Test

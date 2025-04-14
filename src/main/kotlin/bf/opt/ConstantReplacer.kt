@@ -21,12 +21,12 @@ internal object ConstantReplacer : OptimisationPass {
         while (i < program.size) {
             val op = program[i]
             if (op is Loop && op.isZeroReplaceable) {
-                program[i] = SetToConstant()
-
                 // If the next operation is a ValueChange, we can inline it
                 if (i != program.lastIndex && program[i + 1].let { it is ValueChange && it.offset == 0 }) {
-                    val op2 = program[i + 1] as ValueChange
-                    program[i + 1] = SetToConstant(op2.value.toUByte())
+                    val op2 = program.removeAt(i + 1) as ValueChange
+                    program[i] = SetToConstant(op2.value.toUByte())
+                } else {
+                    program[i] = SetToConstant()
                 }
             }
 
