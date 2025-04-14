@@ -22,7 +22,7 @@ fun bfOptimise(program: Iterable<BFOperation>): List<BFOperation> {
     val program = program.toMutableList()
 
     val passes = arrayOf(
-        RunLengthMerger, ConstantReplacer
+        RunLengthMerger, ConstantReplacer, OffsetAdder
     )
 
     passes.forEach {
