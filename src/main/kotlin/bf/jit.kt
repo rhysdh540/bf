@@ -132,8 +132,12 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
     fun MethodVisitor.addOffset(offset: Int) {
         if (offset != 0) {
-            pushIntConstant(offset)
-            visitInsn(IADD)
+            pushIntConstant(offset.absoluteValue)
+            if (offset > 0) {
+                visitInsn(IADD)
+            } else {
+                visitInsn(ISUB)
+            }
 
             if (opts.overflowProtection) {
                 visitVarInsn(ALOAD, tape)
