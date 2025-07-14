@@ -7,14 +7,15 @@ import org.objectweb.asm.MethodVisitor
 import java.io.Reader
 import java.io.Writer
 import java.lang.invoke.MethodHandle
-import java.util.Objects
 
 import org.objectweb.asm.Opcodes.*
+import org.objectweb.asm.Type
 import org.objectweb.asm.tree.analysis.AnalyzerException
 import org.objectweb.asm.util.CheckClassAdapter
 import java.io.PrintWriter
 import java.lang.invoke.MethodHandles
 import java.lang.invoke.MethodType
+import kotlin.random.Random
 import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
@@ -27,8 +28,6 @@ import kotlin.math.absoluteValue
  * @param tapeSize the size of the tape, if [selfContained] is true
  * @param mainMethod whether to generate a main method in the class,
  *                   which when run will run the program with `System.in` and `System.out`
- * @param packag the package to put the class in, if empty, will be in `bf.generated`
- *
  * @param overflowProtection whether to wrap tape accesses. Slows down the program significantly, but can prevent crashes.
  *
  * @param export whether to export the class to a file in the current directory
@@ -38,8 +37,6 @@ data class CompileOptions(
     val selfContained: Boolean = false,
     val tapeSize: Int = TAPE_SIZE,
     val mainMethod: Boolean = false,
-    val packag: String = "bf.generated",
-
     val overflowProtection: Boolean = false,
 
     val export: Boolean = false,
@@ -47,10 +44,7 @@ data class CompileOptions(
 
 @OptIn(ExperimentalStdlibApi::class)
 fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOptions()): (Writer, Reader) -> Unit {
-    var className = "BFProgram$${Objects.hash(System.nanoTime(), program, System.identityHashCode(program)).toHexString()}"
-    if (opts.packag.isNotEmpty()) {
-        className = "${opts.packag.replace('.', '/')}/$className"
-    }
+    val className = "BFProgram$${Random.nextInt().toHexString()}"
     val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
     cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
     var mw: MethodVisitor
@@ -133,11 +127,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     fun MethodVisitor.addOffset(offset: Int) {
         if (offset != 0) {
             pushIntConstant(offset.absoluteValue)
-            if (offset > 0) {
-                visitInsn(IADD)
-            } else {
-                visitInsn(ISUB)
-            }
+            visitInsn(if (offset >= 0) IADD else ISUB)
 
             if (opts.overflowProtection) {
                 visitVarInsn(ALOAD, tape)
@@ -156,6 +146,43 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
                     }
                 }
             }
+        }
+    }
+
+    // bf code has a lot of repeated loops, so we can reuse the same method
+    val loopCache = mutableMapOf<Loop, String>()
+    val loopMethodDescriptor = Type.getMethodDescriptor(
+        Type.INT_TYPE,
+        Type.getType(Writer::class.java),
+        Type.getType(Reader::class.java),
+        Type.getType(ByteArray::class.java),
+        Type.INT_TYPE
+    )
+
+    // loop bodies go in separate functions, because the jvm can't handle large methods well
+    fun makeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit): String {
+        return loopCache.getOrPut(loop) {
+            val methodName = "loopBody$${Random.nextInt().toHexString()}"
+            cw.visitMethod(ACC_PRIVATE or ACC_STATIC, methodName, loopMethodDescriptor, null, null).run {
+                visitCode()
+
+                for (op in loop) {
+                    writeOp(op)
+                }
+
+                visitVarInsn(ILOAD, pointer)
+                visitInsn(IRETURN)
+
+                if (opts.localVariables) {
+                    visitParameter("out", 0)
+                    visitParameter("in", 0)
+                    visitParameter("tape", 0)
+                    visitParameter("pointer", 0)
+                }
+                visitMaxs(0, 0)
+                visitEnd()
+            }
+            methodName
         }
     }
 
@@ -219,36 +246,14 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitJumpInsn(IFEQ, loopEnd)
 
             if (op.any { it is Loop }) {
-                // put the loop body in a separate method because the vm can't handle ginormous methods very well
-                val methodName = "loopBody$${Objects.hash(System.nanoTime(), op, System.identityHashCode(op)).toHexString()}"
-                val desc = "(Ljava/io/Writer;Ljava/io/Reader;[BI)I"
-                cw.visitMethod(ACC_PRIVATE or ACC_STATIC, methodName, desc, null, null).run {
-                    // method signature: private static int <name>(Writer out, Reader in, byte[] tape, int pointer)
-                    // so the lvt indices are the same hopefully
-                    visitCode()
-
-                    for (op in op) {
-                        writeOp(op)
-                    }
-
-                    visitVarInsn(ILOAD, pointer)
-                    visitInsn(IRETURN)
-                    if (opts.localVariables) {
-                        visitParameter("out", 0)
-                        visitParameter("in", 0)
-                        visitParameter("tape", 0)
-                        visitParameter("pointer", 0)
-                    }
-                    visitMaxs(0, 0)
-                    visitEnd()
-                }
+                val methodName = makeLoopBody(op) { writeOp(it) }
 
                 // call the loop body
                 visitVarInsn(ALOAD, output)
                 visitVarInsn(ALOAD, input)
                 visitVarInsn(ALOAD, tape)
                 visitVarInsn(ILOAD, pointer)
-                visitMethodInsn(INVOKESTATIC, className, methodName, desc, false)
+                visitMethodInsn(INVOKESTATIC, className, methodName, loopMethodDescriptor, false)
                 visitVarInsn(ISTORE, pointer)
             } else {
                 for (op in op) {

@@ -4,29 +4,32 @@ import bf.opt.bfOptimise
 import bf.opt.bfStrip
 import kotlin.io.path.Path
 import kotlin.io.path.readText
+import kotlin.time.measureTime
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         println("""
             |Usage: bf.jar <program.b>
             |Options:
-            |       --help, -h 
+            |       --help, -h
             |               Show this help message
-            |       --overflow-protection, -o 
+            |       --overflow-protection, -o
             |               Enable overflow protection for the following programs
-            |       --optimise, -O            
+            |       --optimise, -O
             |               Optimise the intermediate representation of the following programs
-            |       --strip, -S               
+            |       --strip, -S
             |               Strip unused code from the following programs
-            |       --compile, -c             
+            |       --compile, -c
             |               Compile the following programs to java bytecode
-            |       --interpreted, -i         
+            |       --interpreted, -i
             |               Run the following programs in interpreted mode (default)
-            |       --string, -s              
+            |       --string, -s
             |               Run the next argument as a string
-            |       --export, -e              
+            |       --export, -e
             |               Export the following programs to a file in `.bf.out`
-            |       --no-export               
+            |       --time, -t
+            |               Time the following programs
+            |       --no-export
             |               Do not export the following programs
         """.trimMargin())
         return
@@ -38,12 +41,13 @@ fun main(args: Array<String>) {
     var optimise = false
     var strip = false
     var export = false
+    var time = false
 
     for (arg in args) {
         if (nextIsString) {
             nextIsString = false
             val program = arg
-            runProgram(program, compiled, optimise, strip, CompileOptions(
+            runProgram(program, compiled, optimise, strip, time, CompileOptions(
                 localVariables = export,
                 export = export,
                 overflowProtection = overflowProtection,
@@ -85,6 +89,11 @@ fun main(args: Array<String>) {
             continue
         }
 
+        if (arg in arrayOf("--time", "-t")) {
+            time = true
+            continue
+        }
+
         if (arg in arrayOf("--string", "-s")) {
             nextIsString = true
             continue
@@ -99,6 +108,8 @@ fun main(args: Array<String>) {
                     'i' -> compiled = false
                     'e' -> export = true
                     's' -> nextIsString = true
+                    'o' -> overflowProtection = true
+                    't' -> time = true
                     else -> {
                         println("Unknown argument: ${arg[i]}")
                         return
@@ -111,7 +122,7 @@ fun main(args: Array<String>) {
 
         if (arg.endsWith(".b") || arg.endsWith(".bf")) {
             val program = Path(arg).readText()
-            runProgram(program, compiled, optimise, strip, CompileOptions(
+            runProgram(program, compiled, optimise, strip, time, CompileOptions(
                 localVariables = export,
                 export = export,
                 overflowProtection = overflowProtection,
@@ -128,19 +139,26 @@ private fun runProgram(
     compile: Boolean,
     optimise: Boolean,
     strip: Boolean,
+    printTime: Boolean,
     opts: CompileOptions
 ) {
-    var program = bfParse(literal)
-    if (optimise)
-        program = bfOptimise(program)
-    if (strip)
-        program = bfStrip(program)
+    val time = measureTime {
+        var program = bfParse(literal)
+        if (optimise)
+            program = bfOptimise(program)
+        if (strip)
+            program = bfStrip(program)
 
-    if (compile) {
-        val compiled = bfCompile(program, opts)
+        if (compile) {
+            val compiled = bfCompile(program, opts)
 
-        compiled(SysOutWriter, System.`in`.reader())
-    } else {
-        bfRun(program)
+            compiled(SysOutWriter, System.`in`.reader())
+        } else {
+            bfRun(program)
+        }
+    }
+
+    if (printTime) {
+        println("Execution time: ${time.inWholeMilliseconds}ms")
     }
 }

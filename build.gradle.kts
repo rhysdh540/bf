@@ -99,7 +99,7 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
-                "-OSce",
+                "-OScet",
                 file.absolutePath
             )
 

@@ -10,37 +10,19 @@ import bf.ValueChange
 internal object RunLengthMerger : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
         var i = 0
-        while (i < program.size) {
-            val op = program[i]
-            if (op is ValueChange) {
-                var num = op.value
+        while (i < program.size - 1) {
+            val current = program[i]
+            val next = program[i + 1]
 
-                val j = i + 1
-                while (j < program.size && program[j] is ValueChange) {
-                    num += (program[j] as ValueChange).value
-                    program.removeAt(j)
-                }
-
-                num %= 256
-
-                program[i] = ValueChange(num)
+            if (current is PointerMove && next is PointerMove) {
+                program[i] = PointerMove(current.value + next.value)
+                program.removeAt(i + 1)
+            } else if (current is ValueChange && next is ValueChange && current.offset == next.offset) {
+                program[i] = ValueChange(current.value + next.value, current.offset)
+                program.removeAt(i + 1)
+            } else {
+                i++
             }
-
-            if (op is PointerMove) {
-                var num = op.value
-
-                val j = i + 1
-                while (j < program.size && program[j] is PointerMove) {
-                    num += (program[j] as PointerMove).value
-                    program.removeAt(j)
-                }
-
-                num %= 256
-
-                program[i] = PointerMove(num)
-            }
-
-            i++
         }
     }
 }
