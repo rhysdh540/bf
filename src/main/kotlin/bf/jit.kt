@@ -38,9 +38,9 @@ import kotlin.math.max
 data class CompileOptions(
     val tapeSize: Int = TAPE_SIZE,
     val mainMethod: Boolean = false,
-    val overflowProtection: Boolean = false,
+    val overflowProtection: Boolean = true,
 
-    val localVariables: Boolean = true,
+    val localVariables: Boolean = false,
     val export: Boolean = false,
 )
 
@@ -274,6 +274,41 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             pushIntConstant(op.value.toInt())
             visitInsn(BASTORE)
         }
+        is Copy -> {
+            // currentValue = tape[pointer] & 0xFF
+            visitVarInsn(ALOAD, tape)
+            visitVarInsn(ILOAD, pointer)
+            visitInsn(BALOAD)
+            pushIntConstant(0xFF)
+            visitInsn(IAND)
+            visitVarInsn(ISTORE, copyValue)
+
+            // tape[pointer] = 0
+            visitVarInsn(ALOAD, tape)
+            visitVarInsn(ILOAD, pointer)
+            pushIntConstant(0)
+            visitInsn(BASTORE)
+
+            for ((offset, multiplier) in op.multipliers) {
+                // tape[pointer + offset] += (byte) (currentValue * multiplier)
+                visitVarInsn(ALOAD, tape)
+                visitVarInsn(ILOAD, pointer)
+                addOffset(offset)
+
+                visitInsn(DUP2)
+                visitInsn(BALOAD)
+                visitIntInsn(SIPUSH, 0xFF)
+                visitInsn(IAND)
+
+                visitVarInsn(ILOAD, copyValue)
+                pushIntConstant(multiplier.absoluteValue)
+                visitInsn(IMUL)
+                visitInsn(if (multiplier >= 0) IADD else ISUB)
+                visitInsn(I2B)
+
+                visitInsn(BASTORE)
+            }
+        }
     }
 
     for (op in program) {
@@ -335,12 +370,11 @@ private fun warnCodeSize(clazz: ByteArray) {
         val evaluator = CodeSizeEvaluator(MethodNode())
         method.accept(evaluator)
         if (evaluator.maxSize > 1024 * 8) {
-            System.err.println("Warning: Method ${cn.name}.${method.name} won't get jit")
+            System.err.println("Warning: Method ${cn.name}.${method.name} won't get jit without -XX:-DontCompileHugeMethods, " +
+                    "because it is too large (${evaluator.maxSize} bytes). ")
         }
         maxSize = max(maxSize, evaluator.maxSize)
     }
-
-    println("max code size: $maxSize bytes")
 }
 
 private fun verifyClass(clazz: ByteArray) {
@@ -360,15 +394,9 @@ private fun MethodVisitor.pushIntConstant(value: Int) {
         3 -> visitInsn(ICONST_3)
         4 -> visitInsn(ICONST_4)
         5 -> visitInsn(ICONST_5)
-        else -> {
-            if (value in Byte.MIN_VALUE..Byte.MAX_VALUE) {
-                visitIntInsn(BIPUSH, value)
-            } else if (value in Short.MIN_VALUE..Short.MAX_VALUE) {
-                visitIntInsn(SIPUSH, value)
-            } else {
-                visitLdcInsn(value)
-            }
-        }
+        in Byte.MIN_VALUE..Byte.MAX_VALUE -> visitIntInsn(BIPUSH, value)
+        in Short.MIN_VALUE..Short.MAX_VALUE -> visitIntInsn(SIPUSH, value)
+        else -> visitLdcInsn(value)
     }
 }
 

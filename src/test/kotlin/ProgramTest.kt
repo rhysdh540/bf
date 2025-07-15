@@ -1,9 +1,15 @@
+import bf.CompileOptions
+import bf.bfCompile
 import bf.opt.bfOptimise
 import bf.bfParse
 import bf.bfRun
+import bf.opt.bfStrip
+import java.io.Reader.nullReader
 import java.io.StringWriter
+import java.io.Writer.nullWriter
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.measureTime
 
 class ProgramTest {
     @Test
@@ -24,6 +30,42 @@ class ProgramTest {
         assertEquals(expected, output)
     }
 }
+
+fun main() {
+    val program =bfParse(getResource("mandelbrot.b"))
+        .let { bfStrip(bfOptimise(it)) }
+
+    val runs = 1
+
+    val interpretedTime = measureTime {
+        repeat(runs) {
+            bfRun(program, stdin = nullReader(), stdout = nullWriter())
+        }
+    }
+
+    println("Interpreted time: ${formatTime(interpretedTime.div(runs))}")
+
+    val compiled = bfCompile(program, CompileOptions(export = true))
+
+    val jitTime = measureTime {
+        repeat(runs) {
+            compiled(nullWriter(), nullReader())
+        }
+    }
+
+    println("JIT time: ${formatTime(jitTime.div(runs))}")
+}
+
+private fun formatTime(time: kotlin.time.Duration): String {
+    val seconds = time.inWholeSeconds
+    val milliseconds = time.inWholeMilliseconds % 1000
+    return if (seconds > 0) {
+        "${seconds}.${milliseconds}s"
+    } else {
+        "${milliseconds}ms"
+    }
+}
+
 
 private fun getResource(name: String): String {
     return ProgramTest::class.java.classLoader.getResourceAsStream(name)

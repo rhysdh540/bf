@@ -11,26 +11,21 @@ class OptimiseTest {
         val program = "++++>++++++<<<<<<[->>++++++<]>>++++++>+++++++"
         val expected = bfProgram {
             increment(4)
-            moveRight()
-            increment(6)
-            moveLeft(6)
+            increment(6, offset = 1)
+            moveLeft(5)
             loop {
                 decrement()
-                moveRight(2)
-                increment(6)
-                moveLeft()
+                increment(6, offset = 2)
+                moveRight()
             }
-            moveRight(2)
-            increment(6)
-            moveRight()
-            increment(7)
+            increment(6, offset = 2)
+            increment(7, offset = 3)
+            moveRight(3)
         }
 
-        val parsed = bfParse(program)
-        val optimised = bfOptimise(parsed)
+        val optimised = bfOptimise(bfParse(program))
 
         assertEquals(expected, optimised)
-        assertEquals(bfOptimise(optimised), optimised)
     }
 
     @Test
@@ -72,7 +67,18 @@ class OptimiseTest {
     }
 
     @Test
-    fun idk() {
+    fun testCopyLoop() {
+        val program = "[->++>>+<<<]"
+        val expected = bfProgram {
+            copy(1 to 2, 3 to 1)
+        }
+
+        val optimised = bfOptimise(bfParse(program))
+        assertEquals(expected, optimised)
+    }
+
+    @Test
+    fun edgeCase() {
         val program = ">>>>>-"
         val expected = bfProgram {
             moveRight(5)

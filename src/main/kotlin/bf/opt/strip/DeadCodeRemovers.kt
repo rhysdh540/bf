@@ -1,6 +1,7 @@
 package bf.opt.strip
 
 import bf.BFOperation
+import bf.Copy
 import bf.Loop
 import bf.PointerMove
 import bf.SetToConstant
@@ -14,24 +15,33 @@ import bf.opt.OptimisationPass
  */
 internal object DeadStartRemover : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
-        while (program.first() is Loop || (program.first().let { it is SetToConstant && it.value.toInt() == 0 })) {
+        while (program.first().valid) {
             program.removeFirst()
         }
     }
+
+    private val BFOperation.valid: Boolean
+        get() {
+            if (this is Loop) return true
+            if (this is SetToConstant && this.value.toInt() == 0) return true
+            if (this is Copy) return true
+            return false
+        }
 }
 
 /**
  * Optimisation pass that removes necessary code at the end of the program.
  * Unnecessary code may change the internal state of the program but will have
  * no effect on the final output.
- * This includes pointer moves, value changes, and set-to-constant operations.
+ * This includes pointer moves, value changes, set-to-constant operations, and copy operations.
  */
 internal object DeadEndRemover : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
-        while (program.isNotEmpty() && program.last().let {
-                it is PointerMove || it is ValueChange || it is SetToConstant
-            }) {
+        while (program.isNotEmpty() && program.last().valid) {
             program.removeAt(program.lastIndex)
         }
     }
+
+    private val BFOperation.valid: Boolean
+        get() = this is PointerMove || this is ValueChange || this is SetToConstant || this is Copy
 }

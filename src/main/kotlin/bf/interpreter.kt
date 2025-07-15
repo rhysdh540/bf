@@ -50,6 +50,14 @@ private fun runImpl(tape: UByteArray, pointer: Int,
                 val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)
                 tape[index] = op.value
             }
+            is Copy -> {
+                val currentValue = tape[pointer].toInt()
+                tape[pointer] = 0u
+                for ((offset, multiplier) in op.multipliers) {
+                    val index = pointer.wrappingAdd(offset, TAPE_SIZE)
+                    tape[index] = (tape[index].toInt() + currentValue * multiplier).toUByte()
+                }
+            }
         }
         insn++
     }

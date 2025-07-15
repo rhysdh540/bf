@@ -61,3 +61,13 @@ data class Loop(internal val contents: Array<BFOperation>) : BFOperation, List<B
  * This isn't a standard command, but is used in [optimised][bf.opt.bfOptimise] versions of programs.
  */
 data class SetToConstant(val value: UByte = 0u, val offset: Int = 0) : BFOperation
+
+/**
+ * Represents a command to copy the value at the current data pointer to other cells
+ * while setting the current cell to zero.
+ * This represents optimized loops like `[->++>>+<<]` which copy the current value
+ * to other positions with multipliers.
+ * @param multipliers A map where keys are offsets from the current position,
+ *                   and values are the multipliers for copying.
+ */
+data class Copy(val multipliers: Map<Int, Int>) : BFOperation

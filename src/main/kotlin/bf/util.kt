@@ -15,3 +15,11 @@ object SysOutWriter : FilterWriter(nullWriter()) {
         print(c.toChar())
     }
 }
+
+class DefaultMap<K, V>(val initializer: DefaultMap<K, V>.(K) -> V, private val back: MutableMap<K, V>) : MutableMap<K, V> by back {
+    override fun get(key: K) = back.getOrPut(key) { initializer(key) }
+}
+
+fun <K, V> defaultMap(initializer: DefaultMap<K, V>.(K) -> V): DefaultMap<K, V> {
+    return DefaultMap(initializer, mutableMapOf())
+}
