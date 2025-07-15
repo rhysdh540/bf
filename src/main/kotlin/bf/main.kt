@@ -164,6 +164,16 @@ private fun runProgram(
     }
 
     if (printTime) {
-        println("Execution time: ${time.inWholeMilliseconds / 1000.0}s")
+        println("Execution time: ${formatTime(time)}")
+    }
+}
+
+private fun formatTime(time: kotlin.time.Duration): String {
+    val seconds = time.inWholeSeconds
+    val milliseconds = time.inWholeMilliseconds % 1000
+    return if (seconds > 0) {
+        "${seconds}.${milliseconds}s"
+    } else {
+        "${milliseconds}ms"
     }
 }

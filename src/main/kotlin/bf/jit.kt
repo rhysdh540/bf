@@ -27,7 +27,7 @@ import kotlin.math.max
 
 /**
  * Options for customizing the jit
- * @param tapeSize the size of the tape to use
+ * @param tapeSize the size of the tape to use. Powers of two are recommended for performance.
  * @param mainMethod whether to generate a main method in the class,
  *                   which when run will run the program with `System.in` and `System.out`
  * @param overflowProtection whether to wrap tape accesses. Slows down the program significantly, but can prevent crashes.
@@ -81,10 +81,11 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         mw.visitEnd()
     }
 
-    mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "wrapNeg", "(II)I", null, null)
+    // method to wrap negative indices
+    mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "w", "(II)I", null, null)
     mw.visitCode()
     mw.run {
-        // method signature: private static int wrapNeg(int num, int length)
+        // method signature: private static int w(int num, int length)
         // return num < 0 ? num + length : num
 
         val negative = Label()
@@ -131,19 +132,25 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         visitInsn(if (offset >= 0) IADD else ISUB)
 
         if (opts.overflowProtection) {
-            visitVarInsn(ALOAD, tape)
-            visitInsn(ARRAYLENGTH)
-            visitInsn(IREM)
-            if (offset < 0) {
-                visitVarInsn(ALOAD, tape)
-                visitInsn(ARRAYLENGTH)
-                visitMethodInsn(INVOKESTATIC, className, "wrapNeg", "(II)I", false)
+            if (opts.tapeSize and (opts.tapeSize - 1) == 0) {
+                pushIntConstant(opts.tapeSize - 1)
+                visitInsn(IAND)
+            } else {
+                pushIntConstant(opts.tapeSize)
+                visitInsn(IREM)
+
+                if (offset < 0) {
+                    visitVarInsn(ALOAD, tape)
+                    visitInsn(ARRAYLENGTH)
+                    visitMethodInsn(INVOKESTATIC, className, "w", "(II)I", false)
+                }
             }
         }
     }
 
     // bf code has a lot of repeated loops, so we can reuse the same method
     val loopCache = mutableMapOf<Loop, String>()
+    var loopI = 1
     val loopMethodDescriptor = Type.getMethodDescriptor(
         Type.INT_TYPE,
         Type.getType(Writer::class.java),
@@ -155,7 +162,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     // loop bodies go in separate functions, because the jvm can't handle large methods well
     fun makeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit): String {
         return loopCache.getOrPut(loop) {
-            val methodName = "lb$${Random.nextInt().toHexString()}"
+            val methodName = "loop$loopI"
+            loopI++
             cw.visitMethod(ACC_PRIVATE or ACC_STATIC, methodName, loopMethodDescriptor, null, null).run {
                 visitCode()
 
