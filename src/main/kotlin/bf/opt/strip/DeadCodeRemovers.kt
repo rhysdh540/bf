@@ -23,7 +23,7 @@ internal object DeadStartRemover : OptimisationPass {
     private val BFOperation.valid: Boolean
         get() {
             if (this is Loop) return true
-            if (this is SetToConstant && this.value.toInt() == 0) return true
+            if (this is SetToConstant && this.value.toInt() == 0 && this.offset == 0) return true
             if (this is Copy) return true
             return false
         }

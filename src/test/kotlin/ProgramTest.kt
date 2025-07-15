@@ -33,7 +33,8 @@ class ProgramTest {
 
 fun main() {
     val program =bfParse(getResource("mandelbrot.b"))
-        .let { bfStrip(bfOptimise(it)) }
+        .let { bfOptimise(it) }
+        .let { bfStrip(it) }
 
     val runs = 1
 

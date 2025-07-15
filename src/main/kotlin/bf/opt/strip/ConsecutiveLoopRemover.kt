@@ -26,7 +26,7 @@ internal object ConsecutiveLoopRemover : OptimisationPass {
     private val BFOperation.isLoop: Boolean
         get() {
             if (this is Loop) return true
-            if (this is SetToConstant && this.value.toInt() == 0) return true
+            if (this is SetToConstant && this.value.toInt() == 0 && this.offset == 0) return true
             if (this is Copy) return true
             return false
         }
