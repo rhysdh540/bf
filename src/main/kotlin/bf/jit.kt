@@ -10,6 +10,9 @@ import java.lang.invoke.MethodHandle
 
 import org.objectweb.asm.Opcodes.*
 import org.objectweb.asm.Type
+import org.objectweb.asm.commons.CodeSizeEvaluator
+import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.analysis.AnalyzerException
 import org.objectweb.asm.util.CheckClassAdapter
 import java.io.PrintWriter
@@ -20,25 +23,24 @@ import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
 import kotlin.math.absoluteValue
+import kotlin.math.max
 
 /**
  * Options for customizing the jit
- * @param localVariables whether to generate local variable names in the class
- * @param selfContained whether to generate helper methods in the class (if false, will reference members in `bf.UtilKt` and `bf.SymbolsKt`)
- * @param tapeSize the size of the tape, if [selfContained] is true
+ * @param tapeSize the size of the tape to use
  * @param mainMethod whether to generate a main method in the class,
  *                   which when run will run the program with `System.in` and `System.out`
  * @param overflowProtection whether to wrap tape accesses. Slows down the program significantly, but can prevent crashes.
  *
+ * @param localVariables whether to generate local variable names in the class
  * @param export whether to export the class to a file in the current directory
  */
 data class CompileOptions(
-    val localVariables: Boolean = false,
-    val selfContained: Boolean = false,
     val tapeSize: Int = TAPE_SIZE,
     val mainMethod: Boolean = false,
     val overflowProtection: Boolean = false,
 
+    val localVariables: Boolean = true,
     val export: Boolean = false,
 )
 
@@ -79,27 +81,30 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         mw.visitEnd()
     }
 
-    if (opts.selfContained) {
-        mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "wrap", "(II)I", null, null)
-        mw.visitCode()
-        mw.run {
-            // method signature: private static int wrap(int pointer, int length)
-            // return pointer < 0 ? pointer + length : pointer
+    mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "wrapNeg", "(II)I", null, null)
+    mw.visitCode()
+    mw.run {
+        // method signature: private static int wrapNeg(int num, int length)
+        // return num < 0 ? num + length : num
 
-            val negative = Label()
-            visitVarInsn(ILOAD, 0)
-            visitJumpInsn(IFLT, negative)
-            visitVarInsn(ILOAD, 0)
-            visitInsn(IRETURN)
-            visitLabel(negative)
-            visitVarInsn(ILOAD, 0)
-            visitVarInsn(ILOAD, 1)
-            visitInsn(IADD)
-            visitInsn(IRETURN)
+        val negative = Label()
+        visitVarInsn(ILOAD, 0)
+        visitJumpInsn(IFLT, negative)
+        visitVarInsn(ILOAD, 0)
+        visitInsn(IRETURN)
+        visitLabel(negative)
+        visitVarInsn(ILOAD, 0)
+        visitVarInsn(ILOAD, 1)
+        visitInsn(IADD)
+        visitInsn(IRETURN)
 
-            visitMaxs(0, 0)
-            visitEnd()
-        }
+        visitMaxs(0, 0)
+        visitEnd()
+    }
+
+    if (opts.localVariables) {
+        mw.visitParameter("num", 0)
+        mw.visitParameter("length", 0)
     }
 
     mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", null, null)
@@ -109,11 +114,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     val input = 1
 
     val tape = 2
-    if (opts.selfContained) {
-        mw.pushIntConstant(opts.tapeSize)
-    } else {
-        mw.visitFieldInsn(GETSTATIC, "bf/IrKt", "TAPE_SIZE", "I")
-    }
+    mw.pushIntConstant(opts.tapeSize)
     mw.visitIntInsn(NEWARRAY, T_BYTE)
     mw.visitVarInsn(ASTORE, tape)
 
@@ -122,7 +123,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     mw.visitInsn(ICONST_0)
     mw.visitVarInsn(ISTORE, pointer)
 
-    val programList = program.toList()
+    val copyValue = 4
 
     fun MethodVisitor.addOffset(offset: Int) {
         if (offset != 0) {
@@ -134,16 +135,9 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
                 visitInsn(ARRAYLENGTH)
                 visitInsn(IREM)
                 if (offset < 0) {
-                    if (!opts.selfContained) {
-                        pushIntConstant(0)
-                    }
                     visitVarInsn(ALOAD, tape)
                     visitInsn(ARRAYLENGTH)
-                    if (opts.selfContained) {
-                        visitMethodInsn(INVOKESTATIC, className, "wrap", "(II)I", false)
-                    } else {
-                        visitMethodInsn(INVOKESTATIC, "bf/UtilKt", "wrappingAdd", "(III)I", false)
-                    }
+                    visitMethodInsn(INVOKESTATIC, className, "wrapNeg", "(II)I", false)
                 }
             }
         }
@@ -162,7 +156,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     // loop bodies go in separate functions, because the jvm can't handle large methods well
     fun makeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit): String {
         return loopCache.getOrPut(loop) {
-            val methodName = "loopBody$${Random.nextInt().toHexString()}"
+            val methodName = "lb$${Random.nextInt().toHexString()}"
             cw.visitMethod(ACC_PRIVATE or ACC_STATIC, methodName, loopMethodDescriptor, null, null).run {
                 visitCode()
 
@@ -275,7 +269,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         }
     }
 
-    for (op in programList) {
+    for (op in program) {
         mw.writeOp(op)
     }
 
@@ -285,6 +279,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
         mw.visitLocalVariable("tape", "[B", null, Label(), Label(), tape)
         mw.visitLocalVariable("pointer", "I", null, Label(), Label(), pointer)
+        mw.visitLocalVariable("copyValue", "I", null, Label(), Label(), copyValue)
     }
 
     mw.visitInsn(RETURN)
@@ -298,6 +293,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         path.parent.createDirectories()
         path.writeBytes(bytes)
     }
+
+    warnCodeSize(bytes)
 
     val cl = loadClass(bytes)
     val lookup = MethodHandles.lookup()
@@ -322,6 +319,21 @@ private fun convertHandle(handle: MethodHandle): (Writer, Reader) -> Unit {
     assert(handle.type().parameterType(0) == Writer::class.java)
     assert(handle.type().parameterType(1) == Reader::class.java)
     return { writer, reader -> handle.invoke(writer, reader) }
+}
+
+private fun warnCodeSize(clazz: ByteArray) {
+    var maxSize = 0
+    val cn = ClassNode().also { ClassReader(clazz).accept(it, 0) }
+    for (method in cn.methods) {
+        val evaluator = CodeSizeEvaluator(MethodNode())
+        method.accept(evaluator)
+        if (evaluator.maxSize > 1024 * 8) {
+            System.err.println("Warning: Method ${cn.name}.${method.name} won't get jit")
+        }
+        maxSize = max(maxSize, evaluator.maxSize)
+    }
+
+    println("max code size: $maxSize bytes")
 }
 
 private fun verifyClass(clazz: ByteArray) {

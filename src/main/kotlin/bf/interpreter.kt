@@ -29,15 +29,27 @@ private fun runImpl(tape: UByteArray, pointer: Int,
         val op = program[insn]
         when (op) {
             is PointerMove -> pointer = pointer.wrappingAdd(op.value, TAPE_SIZE)
-            is ValueChange -> tape[pointer + op.offset] = tape[pointer + op.offset].toInt().wrappingAdd(op.value, 256).toUByte()
-            is Print -> stdout.write(tape[pointer + op.offset].toInt())
-            is Input -> tape[pointer + op.offset] = stdin.read().toUByte()
+            is ValueChange -> {
+                val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)
+                tape[index] = (tape[index].toInt() + op.value).toUByte()
+            }
+            is Print -> {
+                val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)
+                stdout.write(tape[index].toInt())
+            }
+            is Input -> {
+                val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)
+                tape[index] = stdin.read().toUByte()
+            }
             is Loop -> {
                 while (tape[pointer].toInt() != 0) {
                     pointer = runImpl(tape, pointer, op.contents, stdout, stdin)
                 }
             }
-            is SetToConstant -> tape[pointer + op.offset] = op.value.toUByte()
+            is SetToConstant -> {
+                val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)
+                tape[index] = op.value
+            }
         }
         insn++
     }

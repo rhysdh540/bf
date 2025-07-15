@@ -70,4 +70,25 @@ class OptimiseTest {
         val program = "++++++>++++++[-]>++++++"
         assertEquals(listOf(), bfStrip(bfOptimise(bfParse(program))))
     }
+
+    @Test
+    fun idk() {
+        val program = "[[>>>>>>>>>]+>[-]>[-]>[-]>[-]>[-]>[-]>[-]>[-]>[-]<<<<<<<<<[<<<<<<<<<]>>>>>>>>>-]"
+        val expected = bfProgram {
+            loop {
+                loop { moveRight(9) }
+                increment()
+                for (i in 0 until 9) {
+                    setToZero(offset = i + 1)
+                }
+
+                loop { moveLeft(9) }
+                moveRight(9)
+                decrement()
+            }
+        }
+
+        val optimised = bfOptimise(bfParse(program))
+        assertEquals(expected, optimised)
+    }
 }

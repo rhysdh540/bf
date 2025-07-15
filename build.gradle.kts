@@ -19,8 +19,15 @@ repositories {
     mavenCentral()
 }
 
+kotlin {
+    jvmToolchain(21)
+}
+
 dependencies {
-    implementation("org.ow2.asm:asm-util:9.7.1")
+    implementation("org.ow2.asm:asm-util:9.8")
+    implementation("org.ow2.asm:asm-commons:9.8")
+
+    testImplementation(kotlin("test"))
 }
 
 tasks.withType<AbstractArchiveTask> {
@@ -79,16 +86,8 @@ tasks.assemble {
     dependsOn(tasks["proguard"])
 }
 
-dependencies {
-    testImplementation(kotlin("test"))
-}
-
 tasks.test {
     useJUnitPlatform()
-}
-
-kotlin {
-    jvmToolchain(21)
 }
 
 for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
@@ -99,9 +98,11 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
-                "-OScet",
+                "-OSceto",
                 file.absolutePath
             )
+
+            jvmArgs("-server", "-Xmx3g", "-XX:+UseZGC", "-XX:-DontCompileHugeMethods")
 
             val input = file.resolveSibling("${name}.in")
             if (input.exists()) {

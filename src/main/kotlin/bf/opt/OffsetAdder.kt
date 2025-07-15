@@ -69,7 +69,10 @@ internal object OffsetAdder : OptimisationPass {
             }
 
             newBlock.addAll(currBlock)
-            newBlock.add(PointerMove(pointer))
+            if (pointer != 0) {
+                newBlock.add(PointerMove(pointer))
+            }
+
             program.subList(i, j).let {
                 it.clear()
                 it.addAll(newBlock)
