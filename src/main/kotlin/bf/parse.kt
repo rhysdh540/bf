@@ -1,3 +1,6 @@
+@file:JvmName("Brainfuck")
+@file:JvmMultifileClass
+
 package bf
 
 /**
@@ -5,6 +8,7 @@ package bf
  * @param program The Brainfuck program as a `CharSequence`
  * @return A list of [BFOperation]s representing the parsed program.
  */
+@JvmName("parse")
 fun bfParse(program: CharSequence): List<BFOperation> {
     return bfParse(program.toList())
 }
@@ -14,6 +18,7 @@ fun bfParse(program: CharSequence): List<BFOperation> {
  * @param program The Brainfuck program as an `Iterable<Char>`.
  * @return A list of [BFOperation]s representing the parsed program.
  */
+@JvmName("parse")
 fun bfParse(program: Iterable<Char>): List<BFOperation> {
     return bfParse(program.toList().toCharArray())
 }
@@ -23,6 +28,7 @@ fun bfParse(program: Iterable<Char>): List<BFOperation> {
  * @param program The Brainfuck program as a `CharArray`.
  * @return A list of [BFOperation]s representing the parsed program.
  */
+@JvmName("parse")
 fun bfParse(program: CharArray): List<BFOperation> {
     val loops = mutableListOf<MutableList<BFOperation>>()
     val result = mutableListOf<BFOperation>()

@@ -14,19 +14,14 @@ internal class LoopOptimiser(vararg val passes: OptimisationPass) : Optimisation
     }
 
     override fun run(program: MutableList<BFOperation>) {
-        program.replaceAll {
-            if (it !is Loop) {
-                return@replaceAll it
+        for (i in program.indices) {
+            val op = program[i]
+            if (op is Loop) {
+                val newContents = op.contents.toMutableList()
+                passes.forEach { it.run(newContents) }
+                this.run(newContents) // go deeper
+                program[i] = Loop(newContents)
             }
-
-            val newProgram = it.contents.toMutableList()
-            passes.forEach { p ->
-                p.run(newProgram)
-            }
-
-            this.run(newProgram) // go deeper
-
-            Loop(newProgram)
         }
     }
 }

@@ -1,3 +1,6 @@
+@file:JvmName("Brainfuck")
+@file:JvmMultifileClass
+
 package bf
 
 /**

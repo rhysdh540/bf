@@ -6,6 +6,7 @@ import bf.PointerMove
 import bf.Print
 import bf.SetToConstant
 import bf.ValueChange
+import bf.set
 
 internal object OffsetAdder : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
@@ -95,10 +96,7 @@ internal object OffsetAdder : OptimisationPass {
                 }
             }
 
-            program.subList(i, j).let {
-                it.clear()
-                it.addAll(newBlock)
-            }
+            program[i..j] = newBlock
 
             i += newBlock.size + 1
         }

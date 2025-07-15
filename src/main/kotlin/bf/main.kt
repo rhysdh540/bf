@@ -1,3 +1,4 @@
+@file:JvmName("Main")
 package bf
 
 import bf.opt.bfOptimise

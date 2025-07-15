@@ -33,14 +33,16 @@ dependencies {
 tasks.withType<AbstractArchiveTask> {
     isPreserveFileTimestamps = false
     isReproducibleFileOrder = true
+
+    archiveClassifier = ""
 }
 
 tasks.jar {
-    manifest.attributes["Main-Class"] = "bf.MainKt"
+    manifest.attributes["Main-Class"] = "bf.Main"
 }
 
 tasks.shadowJar {
-    manifest.attributes["Main-Class"] = "bf.MainKt"
+    manifest.attributes["Main-Class"] = "bf.Main"
 
     exclude("**/*.kotlin_builtins")
 
@@ -98,7 +100,10 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
-                "-OSceto",
+                "--optimise", "--strip",
+                "--compile", "--export",
+                "--time",
+                "--overflow-protection",
                 file.absolutePath
             )
 
@@ -112,7 +117,7 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
             }
 
             classpath = sourceSets["main"].runtimeClasspath
-            mainClass.set("bf.MainKt")
+            mainClass.set("bf.Main")
             javaLauncher = javaToolchains.launcherFor {
                 languageVersion.set(JavaLanguageVersion.of(21))
             }

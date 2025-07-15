@@ -1,3 +1,6 @@
+@file:JvmName("Brainfuck")
+@file:JvmMultifileClass
+
 package bf
 
 import java.io.InputStream
@@ -5,6 +8,7 @@ import java.io.OutputStream
 import java.io.Reader
 import java.io.Writer
 
+@JvmName("run")
 @OptIn(ExperimentalUnsignedTypes::class)
 fun bfRun(program: Iterable<BFOperation>,
           stdout: Writer = SysOutWriter,
@@ -14,6 +18,7 @@ fun bfRun(program: Iterable<BFOperation>,
     stdout.flush()
 }
 
+@JvmName("run")
 fun bfRun(program: Iterable<BFOperation>, stdout: OutputStream, stdin: InputStream) {
     bfRun(program, stdout.writer(), stdin.reader())
 }

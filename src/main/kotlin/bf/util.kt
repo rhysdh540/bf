@@ -1,3 +1,6 @@
+@file:JvmName("Brainfuck")
+@file:JvmMultifileClass
+
 package bf
 
 import java.io.FilterWriter
@@ -14,6 +17,12 @@ object SysOutWriter : FilterWriter(nullWriter()) {
     override fun write(c: Int) {
         print(c.toChar())
     }
+}
+
+operator fun <T> MutableList<T>.set(range: IntRange, newList: Iterable<T>) {
+    this.subList(range.first, range.last)
+        .clear()
+    this.addAll(range.first, newList.toList())
 }
 
 class DefaultMap<K, V>(val initializer: DefaultMap<K, V>.(K) -> V, private val back: MutableMap<K, V>) : MutableMap<K, V> by back {

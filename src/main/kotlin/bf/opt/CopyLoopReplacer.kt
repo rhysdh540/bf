@@ -23,8 +23,7 @@ import bf.defaultMap
  */
 internal object CopyLoopReplacer : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
-        var i = 0
-        while (i < program.size) {
+        for (i in program.indices) {
             val op = program[i]
             if (op is Loop) {
                 val copyOp = analyzeCopyLoop(op)
@@ -32,7 +31,6 @@ internal object CopyLoopReplacer : OptimisationPass {
                     program[i] = copyOp
                 }
             }
-            i++
         }
     }
 

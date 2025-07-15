@@ -1,3 +1,6 @@
+@file:JvmName("Brainfuck")
+@file:JvmMultifileClass
+
 package bf
 
 import org.objectweb.asm.ClassReader
@@ -28,22 +31,23 @@ import kotlin.math.max
 /**
  * Options for customizing the jit
  * @param tapeSize the size of the tape to use. Powers of two are recommended for performance.
- * @param mainMethod whether to generate a main method in the class,
- *                   which when run will run the program with `System.in` and `System.out`
  * @param overflowProtection whether to wrap tape accesses. Slows down the program significantly, but can prevent crashes.
  *
- * @param localVariables whether to generate local variable names in the class
  * @param export whether to export the class to a file in the current directory
+ * @param localVariables whether to generate local variable names in the class
+ * @param mainMethod whether to generate a main method in the class,
+ *                   which when run will run the program with `System.in` and `System.out`
  */
 data class CompileOptions(
     val tapeSize: Int = TAPE_SIZE,
-    val mainMethod: Boolean = false,
     val overflowProtection: Boolean = true,
 
-    val localVariables: Boolean = false,
     val export: Boolean = false,
+    val localVariables: Boolean = export,
+    val mainMethod: Boolean = export,
 )
 
+@JvmName("compile")
 @OptIn(ExperimentalStdlibApi::class)
 fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOptions()): (Writer, Reader) -> Unit {
     val className = "BFProgram$${Random.nextInt().toHexString()}"
@@ -57,10 +61,10 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         // new OutputStreamWriter(System.out)
         mw.visitTypeInsn(NEW, "java/io/OutputStreamWriter")
         mw.visitInsn(DUP)
+        mw.visitInsn(DUP)
         mw.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;")
         mw.visitMethodInsn(INVOKESPECIAL, "java/io/OutputStreamWriter", "<init>", "(Ljava/io/OutputStream;)V", false)
         mw.visitVarInsn(ASTORE, 1)
-        mw.visitVarInsn(ALOAD, 1)
         // new InputStreamReader(System.in)
         mw.visitTypeInsn(NEW, "java/io/InputStreamReader")
         mw.visitInsn(DUP)
@@ -81,31 +85,35 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         mw.visitEnd()
     }
 
+    val tapeSizeIsPowerOf2 = opts.tapeSize and (opts.tapeSize - 1) == 0
+
     // method to wrap negative indices
-    mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "w", "(II)I", null, null)
-    mw.visitCode()
-    mw.run {
-        // method signature: private static int w(int num, int length)
-        // return num < 0 ? num + length : num
+    if (opts.overflowProtection && !tapeSizeIsPowerOf2) {
+        mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "w", "(II)I", null, null)
+        mw.visitCode()
+        mw.run {
+            // method signature: private static int w(int num, int length)
+            // return num < 0 ? num + length : num
 
-        val negative = Label()
-        visitVarInsn(ILOAD, 0)
-        visitJumpInsn(IFLT, negative)
-        visitVarInsn(ILOAD, 0)
-        visitInsn(IRETURN)
-        visitLabel(negative)
-        visitVarInsn(ILOAD, 0)
-        visitVarInsn(ILOAD, 1)
-        visitInsn(IADD)
-        visitInsn(IRETURN)
+            val negative = Label()
+            visitVarInsn(ILOAD, 0)
+            visitJumpInsn(IFLT, negative)
+            visitVarInsn(ILOAD, 0)
+            visitInsn(IRETURN)
+            visitLabel(negative)
+            visitVarInsn(ILOAD, 0)
+            visitVarInsn(ILOAD, 1)
+            visitInsn(IADD)
+            visitInsn(IRETURN)
 
-        visitMaxs(0, 0)
-        visitEnd()
-    }
+            visitMaxs(0, 0)
+            visitEnd()
+        }
 
-    if (opts.localVariables) {
-        mw.visitParameter("num", 0)
-        mw.visitParameter("length", 0)
+        if (opts.localVariables) {
+            mw.visitParameter("num", 0)
+            mw.visitParameter("length", 0)
+        }
     }
 
     mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", null, null)
@@ -121,7 +129,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
     // initialize pointer: int
     val pointer = 3
-    mw.visitInsn(ICONST_0)
+    mw.pushIntConstant(opts.tapeSize / 2)
     mw.visitVarInsn(ISTORE, pointer)
 
     val copyValue = 4
@@ -132,7 +140,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         visitInsn(if (offset >= 0) IADD else ISUB)
 
         if (opts.overflowProtection) {
-            if (opts.tapeSize and (opts.tapeSize - 1) == 0) {
+            if (tapeSizeIsPowerOf2) {
                 pushIntConstant(opts.tapeSize - 1)
                 visitInsn(IAND)
             } else {
@@ -179,6 +187,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
                     visitParameter("in", 0)
                     visitParameter("tape", 0)
                     visitParameter("pointer", 0)
+                    visitLocalVariable("copyValue", "I", null, Label(), Label(), copyValue)
                 }
                 visitMaxs(0, 0)
                 visitEnd()
@@ -205,7 +214,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
             pushIntConstant(op.value.absoluteValue)
             visitInsn(if (op.value >= 0) IADD else ISUB)
-            visitInsn(I2B)
+//            visitInsn(I2B)
 
             visitInsn(BASTORE)
         }
@@ -218,8 +227,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             addOffset(op.offset)
             visitInsn(BALOAD)
 
-            visitIntInsn(SIPUSH, 0xFF)
-            visitInsn(IAND)
+//            visitIntInsn(SIPUSH, 0xFF)
+//            visitInsn(IAND)
 
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Writer", "write", "(I)V", false)
         }
@@ -231,7 +240,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
             visitVarInsn(ALOAD, input)
             visitMethodInsn(INVOKEVIRTUAL, "java/io/Reader", "read", "()I", false)
-            visitInsn(I2B)
+//            visitInsn(I2B)
 
             visitInsn(BASTORE)
         }
@@ -279,8 +288,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             visitVarInsn(ALOAD, tape)
             visitVarInsn(ILOAD, pointer)
             visitInsn(BALOAD)
-            pushIntConstant(0xFF)
-            visitInsn(IAND)
+//            pushIntConstant(0xFF)
+//            visitInsn(IAND)
             visitVarInsn(ISTORE, copyValue)
 
             // tape[pointer] = 0
@@ -297,14 +306,16 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
                 visitInsn(DUP2)
                 visitInsn(BALOAD)
-                visitIntInsn(SIPUSH, 0xFF)
-                visitInsn(IAND)
+//                visitIntInsn(SIPUSH, 0xFF)
+//                visitInsn(IAND)
 
                 visitVarInsn(ILOAD, copyValue)
-                pushIntConstant(multiplier.absoluteValue)
-                visitInsn(IMUL)
+                if (multiplier.absoluteValue != 1) {
+                    pushIntConstant(multiplier.absoluteValue)
+                    visitInsn(IMUL)
+                }
                 visitInsn(if (multiplier >= 0) IADD else ISUB)
-                visitInsn(I2B)
+//                visitInsn(I2B)
 
                 visitInsn(BASTORE)
             }
@@ -364,7 +375,7 @@ private fun convertHandle(handle: MethodHandle): (Writer, Reader) -> Unit {
 }
 
 private fun warnCodeSize(clazz: ByteArray) {
-    var maxSize = 0
+    var maxSize = "" to 0
     val cn = ClassNode().also { ClassReader(clazz).accept(it, 0) }
     for (method in cn.methods) {
         val evaluator = CodeSizeEvaluator(MethodNode())
@@ -373,8 +384,12 @@ private fun warnCodeSize(clazz: ByteArray) {
             System.err.println("Warning: Method ${cn.name}.${method.name} won't get jit without -XX:-DontCompileHugeMethods, " +
                     "because it is too large (${evaluator.maxSize} bytes). ")
         }
-        maxSize = max(maxSize, evaluator.maxSize)
+        if (evaluator.maxSize > maxSize.second) {
+            maxSize = method.name to evaluator.maxSize
+        }
     }
+
+    println("max method size: ${maxSize.first} (${maxSize.second} bytes)")
 }
 
 private fun verifyClass(clazz: ByteArray) {
