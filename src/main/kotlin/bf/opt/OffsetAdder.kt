@@ -41,21 +41,21 @@ internal object OffsetAdder : OptimisationPass {
                     is Input -> {
                         newBlock.addAll(currBlock)
                         currBlock.clear()
-                        newBlock.add(Input(offset = pointer))
+                        newBlock += Input(offset = pointer)
                     }
 
                     is Print -> {
                         newBlock.addAll(currBlock)
                         currBlock.clear()
-                        newBlock.add(Print(offset = pointer))
+                        newBlock += Print(offset = pointer)
                     }
 
                     is ValueChange -> {
-                        currBlock.add(ValueChange(offset = pointer, value = op.value))
+                        currBlock += ValueChange(offset = pointer, value = op.value)
                     }
 
                     is SetToConstant -> {
-                        currBlock.add(SetToConstant(offset = pointer, value = op.value))
+                        currBlock += SetToConstant(offset = pointer, value = op.value)
                     }
 
                     is PointerMove -> {
@@ -71,6 +71,28 @@ internal object OffsetAdder : OptimisationPass {
             newBlock.addAll(currBlock)
             if (pointer != 0) {
                 newBlock.add(PointerMove(pointer))
+            }
+
+            // extremely specific case where there's a single PointerMove followed by an offsettable
+            // so for the case of something like `>>>-`
+            // instead of [ValueChange(3, -1), PointerMove(3)]
+            // we get [PointerMove(3), ValueChange(-1)]
+            if (newBlock.size == 2
+                && newBlock[0].offsettable
+                && newBlock[1] is PointerMove
+                && newBlock[0].offset == (newBlock[1] as PointerMove).value
+            ) {
+                val first = newBlock[0]
+                val pm = newBlock[1] as PointerMove
+                newBlock.clear()
+                newBlock += PointerMove(pm.value)
+                newBlock += when (first) {
+                    is Input -> Input()
+                    is Print -> Print()
+                    is ValueChange -> ValueChange(value = first.value)
+                    is SetToConstant -> SetToConstant(value = first.value)
+                    else -> error("Unexpected operation: $first")
+                }
             }
 
             program.subList(i, j).let {

@@ -43,7 +43,7 @@ fun bfOptimise(program: Iterable<BFOperation>): List<BFOperation> {
  * - removes the second and after of any set of consecutive loops
  */
 fun bfStrip(program: Iterable<BFOperation>): List<BFOperation> {
-    var program = program.toMutableList()
+    val program = program.toMutableList()
 
     val passes = arrayOf(
         DeadStartRemover,

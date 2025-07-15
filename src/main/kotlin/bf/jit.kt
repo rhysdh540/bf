@@ -126,19 +126,18 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     val copyValue = 4
 
     fun MethodVisitor.addOffset(offset: Int) {
-        if (offset != 0) {
-            pushIntConstant(offset.absoluteValue)
-            visitInsn(if (offset >= 0) IADD else ISUB)
+        if (offset == 0) return
+        pushIntConstant(offset.absoluteValue)
+        visitInsn(if (offset >= 0) IADD else ISUB)
 
-            if (opts.overflowProtection) {
+        if (opts.overflowProtection) {
+            visitVarInsn(ALOAD, tape)
+            visitInsn(ARRAYLENGTH)
+            visitInsn(IREM)
+            if (offset < 0) {
                 visitVarInsn(ALOAD, tape)
                 visitInsn(ARRAYLENGTH)
-                visitInsn(IREM)
-                if (offset < 0) {
-                    visitVarInsn(ALOAD, tape)
-                    visitInsn(ARRAYLENGTH)
-                    visitMethodInsn(INVOKESTATIC, className, "wrapNeg", "(II)I", false)
-                }
+                visitMethodInsn(INVOKESTATIC, className, "wrapNeg", "(II)I", false)
             }
         }
     }

@@ -2,6 +2,8 @@ package bf
 
 import bf.opt.bfOptimise
 import bf.opt.bfStrip
+import java.io.Reader
+import java.io.Writer
 import kotlin.io.path.Path
 import kotlin.io.path.readText
 import kotlin.time.measureTime
@@ -142,16 +144,19 @@ private fun runProgram(
     printTime: Boolean,
     opts: CompileOptions
 ) {
+    var program = bfParse(literal)
+    if (optimise)
+        program = bfOptimise(program)
+    if (strip)
+        program = bfStrip(program)
+
+    val compiled: (Writer, Reader) -> Unit
+    if (compile) {
+        compiled = bfCompile(program, opts)
+    }
+
     val time = measureTime {
-        var program = bfParse(literal)
-        if (optimise)
-            program = bfOptimise(program)
-        if (strip)
-            program = bfStrip(program)
-
         if (compile) {
-            val compiled = bfCompile(program, opts)
-
             compiled(SysOutWriter, System.`in`.reader())
         } else {
             bfRun(program)
@@ -159,6 +164,6 @@ private fun runProgram(
     }
 
     if (printTime) {
-        println("Execution time: ${time.inWholeMilliseconds}ms")
+        println("Execution time: ${time.inWholeMilliseconds / 1000.0}s")
     }
 }
