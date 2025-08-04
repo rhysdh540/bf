@@ -17,7 +17,7 @@ internal class LoopOptimiser(vararg val passes: OptimisationPass) : Optimisation
         for (i in program.indices) {
             val op = program[i]
             if (op is Loop) {
-                val newContents = op.contents.toMutableList()
+                val newContents = op.toMutableList()
                 passes.forEach { it.run(newContents) }
                 this.run(newContents) // go deeper
                 program[i] = Loop(newContents)

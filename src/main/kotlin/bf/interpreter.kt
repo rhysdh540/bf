@@ -14,7 +14,7 @@ fun bfRun(program: Iterable<BFOperation>,
           stdout: Writer = SysOutWriter,
           stdin: Reader = System.`in`.reader(),
 ) {
-    runImpl(UByteArray(TAPE_SIZE), 0, program.toList().toTypedArray(), stdout, stdin)
+    runImpl(UByteArray(TAPE_SIZE), 0, program.toList(), stdout, stdin)
     stdout.flush()
 }
 
@@ -25,7 +25,7 @@ fun bfRun(program: Iterable<BFOperation>, stdout: OutputStream, stdin: InputStre
 
 @OptIn(ExperimentalUnsignedTypes::class)
 private fun runImpl(tape: UByteArray, pointer: Int,
-                    program: Array<BFOperation>,
+                    program: List<BFOperation>,
                     stdout: Writer, stdin: Reader): Int {
     var pointer = pointer
     var insn = 0
@@ -48,7 +48,7 @@ private fun runImpl(tape: UByteArray, pointer: Int,
             }
             is Loop -> {
                 while (tape[pointer].toInt() != 0) {
-                    pointer = runImpl(tape, pointer, op.contents, stdout, stdin)
+                    pointer = runImpl(tape, pointer, op, stdout, stdin)
                 }
             }
             is SetToConstant -> {

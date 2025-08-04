@@ -38,25 +38,26 @@ data class ValueChange(val value: Int, val offset: Int = 0) : BFOperation {
 /**
  * Represents a command to output the value at the current data pointer.
  */
-data class Print(val offset: Int = 0) : BFOperation
+data class Print(val offset: Int = 0) : BFOperation {
+    companion object {
+        val Default = Print()
+    }
+}
 
 /**
  * Represents a command to input a value and store it at the current data pointer.
  */
-data class Input(val offset: Int = 0) : BFOperation
+data class Input(val offset: Int = 0) : BFOperation {
+    companion object {
+        val Default = Input()
+    }
+}
 
 /**
  * Represents a loop and its contents.
  */
-data class Loop(internal val contents: Array<BFOperation>) : BFOperation, List<BFOperation> by contents.toList() {
-    constructor(contents: Iterable<BFOperation>) : this(contents.toList().toTypedArray())
-    override fun toString() = "Loop(${contents.contentToString()})"
-
-    override fun equals(other: Any?): Boolean {
-        return this === other || (other is Loop && contents.contentEquals(other.contents))
-    }
-
-    override fun hashCode() = contents.contentHashCode()
+data class Loop(private val contents: List<BFOperation>) : BFOperation, List<BFOperation> by contents {
+    constructor(contents: Iterable<BFOperation>) : this(contents.toList())
 }
 
 /**
@@ -68,7 +69,7 @@ data class SetToConstant(val value: UByte = 0u, val offset: Int = 0) : BFOperati
 /**
  * Represents a command to copy the value at the current data pointer to other cells
  * while setting the current cell to zero.
- * This represents optimized loops like `[->++>>+<<]` which copy the current value
+ * This represents optimized loops like `[->++>>+<<<]` which copy the current value
  * to other positions with multipliers.
  * @param multipliers A map where keys are offsets from the current position,
  *                   and values are the multipliers for copying.

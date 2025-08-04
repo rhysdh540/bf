@@ -32,9 +32,7 @@ fun bfParse(program: Iterable<Char>): List<BFOperation> {
 fun bfParse(program: CharArray): List<BFOperation> {
     val loops = mutableListOf<MutableList<BFOperation>>()
     val result = mutableListOf<BFOperation>()
-    fun current(): MutableList<BFOperation> {
-        return if (loops.isNotEmpty()) loops.last() else result
-    }
+    fun current() = loops.lastOrNull() ?: result
 
     var i = 0
     var lastLoopStart = -1
@@ -44,17 +42,14 @@ fun bfParse(program: CharArray): List<BFOperation> {
             '<' -> current().add(PointerMove.Left)
             '+' -> current().add(ValueChange.Plus)
             '-' -> current().add(ValueChange.Minus)
-            '.' -> current().add(Print())
-            ',' -> current().add(Input())
+            '.' -> current().add(Print.Default)
+            ',' -> current().add(Input.Default)
             '[' -> {
                 loops.add(mutableListOf())
                 lastLoopStart = i
             }
             ']' -> {
-                if (loops.isEmpty()) {
-                    throw IllegalArgumentException("Unmatched ']' at index $i")
-                }
-                val loop = loops.removeLast()
+                val loop = loops.removeLastOrNull() ?: error("Unmatched ']' at index $i")
                 current().add(Loop(loop))
             }
         }

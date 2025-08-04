@@ -3,30 +3,24 @@
 
 package bf
 
-import org.objectweb.asm.ClassReader
-import org.objectweb.asm.ClassWriter
-import org.objectweb.asm.Label
-import org.objectweb.asm.MethodVisitor
-import java.io.Reader
-import java.io.Writer
-import java.lang.invoke.MethodHandle
-
+import org.objectweb.asm.*
 import org.objectweb.asm.Opcodes.*
-import org.objectweb.asm.Type
 import org.objectweb.asm.commons.CodeSizeEvaluator
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.analysis.AnalyzerException
 import org.objectweb.asm.util.CheckClassAdapter
 import java.io.PrintWriter
+import java.io.Reader
+import java.io.Writer
+import java.lang.invoke.MethodHandle
 import java.lang.invoke.MethodHandles
 import java.lang.invoke.MethodType
-import kotlin.random.Random
 import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
 import kotlin.math.absoluteValue
-import kotlin.math.max
+import kotlin.random.Random
 
 /**
  * Options for customizing the jit
@@ -53,45 +47,56 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     val className = "BFProgram$${Random.nextInt().toHexString()}"
     val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
     cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
-    var mw: MethodVisitor
 
     if (opts.mainMethod) {
-        mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "main", "([Ljava/lang/String;)V", null, null)
-        mw.visitCode()
-        // new OutputStreamWriter(System.out)
-        mw.visitTypeInsn(NEW, "java/io/OutputStreamWriter")
-        mw.visitInsn(DUP)
-        mw.visitInsn(DUP)
-        mw.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;")
-        mw.visitMethodInsn(INVOKESPECIAL, "java/io/OutputStreamWriter", "<init>", "(Ljava/io/OutputStream;)V", false)
-        mw.visitVarInsn(ASTORE, 1)
-        // new InputStreamReader(System.in)
-        mw.visitTypeInsn(NEW, "java/io/InputStreamReader")
-        mw.visitInsn(DUP)
-        mw.visitFieldInsn(GETSTATIC, "java/lang/System", "in", "Ljava/io/InputStream;")
-        mw.visitMethodInsn(INVOKESPECIAL, "java/io/InputStreamReader", "<init>", "(Ljava/io/InputStream;)V", false)
+        cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "main", "([Ljava/lang/String;)V", null, null).run {
+            visitCode()
+            // new OutputStreamWriter(System.out)
+            visitTypeInsn(NEW, "java/io/OutputStreamWriter")
+            visitInsn(DUP)
+            visitInsn(DUP)
+            visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;")
+            visitMethodInsn(
+                INVOKESPECIAL,
+                "java/io/OutputStreamWriter",
+                "<init>",
+                "(Ljava/io/OutputStream;)V",
+                false
+            )
+            visitVarInsn(ASTORE, 1)
+            // new InputStreamReader(System.in)
+            visitTypeInsn(NEW, "java/io/InputStreamReader")
+            visitInsn(DUP)
+            visitFieldInsn(GETSTATIC, "java/lang/System", "in", "Ljava/io/InputStream;")
+            visitMethodInsn(
+                INVOKESPECIAL,
+                "java/io/InputStreamReader",
+                "<init>",
+                "(Ljava/io/InputStream;)V",
+                false
+            )
 
-        mw.visitMethodInsn(INVOKESTATIC, className, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", false)
-        mw.visitVarInsn(ALOAD, 1)
-        mw.visitMethodInsn(INVOKEVIRTUAL, "java/io/OutputStreamWriter", "flush", "()V", false)
-        mw.visitInsn(RETURN)
+            visitMethodInsn(INVOKESTATIC, className, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", false)
+            visitVarInsn(ALOAD, 1)
+            visitMethodInsn(INVOKEVIRTUAL, "java/io/OutputStreamWriter", "flush", "()V", false)
+            visitInsn(RETURN)
 
-        if (opts.localVariables) {
-            mw.visitParameter("args", 0)
-            mw.visitLocalVariable("out", "Ljava/io/Writer;", null, Label(), Label(), 1)
+            if (opts.localVariables) {
+                visitParameter("args", 0)
+                visitLocalVariable("out", "Ljava/io/Writer;", null, Label(), Label(), 1)
+            }
+
+            visitMaxs(0, 0)
+            visitEnd()
         }
-
-        mw.visitMaxs(0, 0)
-        mw.visitEnd()
     }
 
     val tapeSizeIsPowerOf2 = opts.tapeSize and (opts.tapeSize - 1) == 0
 
     // method to wrap negative indices
     if (opts.overflowProtection && !tapeSizeIsPowerOf2) {
-        mw = cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "w", "(II)I", null, null)
-        mw.visitCode()
-        mw.run {
+        cw.visitMethod(ACC_PRIVATE or ACC_STATIC, "w", "(II)I", null, null).run {
+            visitCode()
             // method signature: private static int w(int num, int length)
             // return num < 0 ? num + length : num
 
@@ -108,15 +113,15 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
             visitMaxs(0, 0)
             visitEnd()
-        }
 
-        if (opts.localVariables) {
-            mw.visitParameter("num", 0)
-            mw.visitParameter("length", 0)
+            if (opts.localVariables) {
+                visitParameter("num", 0)
+                visitParameter("length", 0)
+            }
         }
     }
 
-    mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", null, null)
+    val mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", null, null)
     mw.visitCode()
 
     val output = 0
@@ -381,15 +386,15 @@ private fun warnCodeSize(clazz: ByteArray) {
         val evaluator = CodeSizeEvaluator(MethodNode())
         method.accept(evaluator)
         if (evaluator.maxSize > 1024 * 8) {
-            System.err.println("Warning: Method ${cn.name}.${method.name} won't get jit without -XX:-DontCompileHugeMethods, " +
-                    "because it is too large (${evaluator.maxSize} bytes). ")
+            System.err.println(
+                "Warning: Method ${cn.name}.${method.name} won't get jit without -XX:-DontCompileHugeMethods, " +
+                        "because it is too large (${evaluator.maxSize} bytes). "
+            )
         }
         if (evaluator.maxSize > maxSize.second) {
             maxSize = method.name to evaluator.maxSize
         }
     }
-
-    println("max method size: ${maxSize.first} (${maxSize.second} bytes)")
 }
 
 private fun verifyClass(clazz: ByteArray) {
