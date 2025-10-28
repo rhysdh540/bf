@@ -102,7 +102,7 @@ fun main(args: Array<String>) {
             continue
         }
 
-        if (arg in arrayOf("--string", "-s")) {
+        if (arg in arrayOf("--eval", "-e")) {
             nextIsString = true
             continue
         }
