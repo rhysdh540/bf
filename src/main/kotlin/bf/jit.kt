@@ -383,7 +383,7 @@ private fun warnCodeSize(clazz: ByteArray) {
     var maxSize = "" to 0
     val cn = ClassNode().also { ClassReader(clazz).accept(it, 0) }
     for (method in cn.methods) {
-        val evaluator = CodeSizeEvaluator(MethodNode())
+        val evaluator = CodeSizeEvaluator(null)
         method.accept(evaluator)
         if (evaluator.maxSize > 1024 * 8) {
             System.err.println(

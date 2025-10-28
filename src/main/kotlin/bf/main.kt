@@ -3,8 +3,6 @@ package bf
 
 import bf.opt.bfOptimise
 import bf.opt.bfStrip
-import java.io.Reader
-import java.io.Writer
 import kotlin.io.path.Path
 import kotlin.io.path.readText
 import kotlin.time.measureTime
@@ -46,15 +44,22 @@ fun main(args: Array<String>) {
     var export = false
     var time = false
 
-    for (arg in args) {
-        if (nextIsString) {
-            nextIsString = false
-            val program = arg
-            runProgram(program, compiled, optimise, strip, time, CompileOptions(
+    fun makeCompileOptions(): CompileOptions? {
+        return if (compiled) {
+            CompileOptions(
                 localVariables = export,
                 export = export,
                 overflowProtection = overflowProtection,
-            ))
+            )
+        } else {
+            null
+        }
+    }
+
+    for (arg in args) {
+        if (nextIsString) {
+            nextIsString = false
+            runProgram(arg, optimise, strip, time, makeCompileOptions())
             continue
         }
 
@@ -125,11 +130,7 @@ fun main(args: Array<String>) {
 
         if (arg.endsWith(".b") || arg.endsWith(".bf")) {
             val program = Path(arg).readText()
-            runProgram(program, compiled, optimise, strip, time, CompileOptions(
-                localVariables = export,
-                export = export,
-                overflowProtection = overflowProtection,
-            ))
+            runProgram(program, optimise, strip, time, makeCompileOptions())
         } else {
             println("Unknown argument: $arg")
             return
@@ -139,11 +140,10 @@ fun main(args: Array<String>) {
 
 private fun runProgram(
     literal: String,
-    compile: Boolean,
     optimise: Boolean,
     strip: Boolean,
     printTime: Boolean,
-    opts: CompileOptions
+    opts: CompileOptions?
 ) {
     var program = bfParse(literal)
     if (optimise)
@@ -151,18 +151,12 @@ private fun runProgram(
     if (strip)
         program = bfStrip(program)
 
-    val compiled: (Writer, Reader) -> Unit
-    if (compile) {
-        compiled = bfCompile(program, opts)
-    }
-
-    val time = measureTime {
-        if (compile) {
-            compiled(SysOutWriter, System.`in`.reader())
-        } else {
-            bfRun(program)
-        }
-    }
+    val time = measureTime(if (opts != null) {
+        val compiled = bfCompile(program, opts);
+        { compiled(SysOutWriter, System.`in`.reader()) }
+    } else {
+        { bfRun(program) }
+    })
 
     if (printTime) {
         println("Execution time: ${formatTime(time)}")

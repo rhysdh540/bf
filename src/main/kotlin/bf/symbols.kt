@@ -6,7 +6,7 @@ package bf
 /**
  * The size of the tape used in the Brainfuck interpreter.
  */
-const val TAPE_SIZE = 1 shl 15 // 32768 cells
+const val TAPE_SIZE = 32768 // 2^15
 
 /**
  * Represents an operation in a Brainfuck program.

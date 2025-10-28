@@ -31,8 +31,7 @@ private fun runImpl(tape: UByteArray, pointer: Int,
     var insn = 0
 
     while (insn < program.size) {
-        val op = program[insn]
-        when (op) {
+        when (val op = program[insn]) {
             is PointerMove -> pointer = pointer.wrappingAdd(op.value, TAPE_SIZE)
             is ValueChange -> {
                 val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)

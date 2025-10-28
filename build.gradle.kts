@@ -3,13 +3,13 @@ import proguard.ProGuard
 import proguard.Configuration as ProguardConfiguration
 
 plugins {
-    kotlin("jvm") version "2.1.10"
-    id("com.gradleup.shadow") version("9.0.0-beta12")
+    kotlin("jvm") version "2.2.21"
+    id("com.gradleup.shadow") version("9.2.2")
 }
 
 buildscript {
     repositories.mavenCentral()
-    dependencies.classpath("com.guardsquare:proguard-base:7.7.0")
+    dependencies.classpath("com.guardsquare:proguard-base:7.8.1")
 }
 
 group = "dev.rdh"
@@ -48,32 +48,42 @@ tasks.shadowJar {
 
     relocate("org.objectweb.asm", "bf.asm")
     relocate("kotlin", "bf.kotlin")
+    relocate("org.jetbrains.annotations", "bf.jbannotations")
+    relocate("org.intellij.lang.annotations", "bf.ijannotations")
+
+    mergeServiceFiles()
+    archiveClassifier = "fat"
 }
 
-tasks.register("proguard") {
-    group = "build"
-    description = "Run ProGuard on the shadow jar"
+tasks.register<ProGuardTask>("proguard") {
+    inputJar = tasks.shadowJar.flatMap { it.archiveFile }
 
-    dependsOn("shadowJar")
+    options = listOf(
+        "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
+        "-keep public class bf.* { public *; }",
+        "-dontobfuscate",
+        "-optimizations", "!method/specialization/parametertype",
+        "-optimizationpasses", "5",
+        "-dontwarn", "java.lang.invoke.*",
+        "-dontnote",
+        "-assumenosideeffects", $$"public class bf.DslKt$bfProgram$Impl { kotlin.Unit getUnit(java.lang.Object); }"
+    )
 
-    val input = tasks.shadowJar.get().archiveFile.get().asFile
-    val output = layout.buildDirectory.dir("libs").get().asFile.resolve("bf.jar")
+    archiveClassifier = ""
+}
 
-    inputs.file(input)
-    outputs.file(output)
+abstract class ProGuardTask : Jar() {
+    @get:InputFile
+    abstract val inputJar: RegularFileProperty
 
-    doLast {
+    @get:Input
+    abstract val options: ListProperty<String>
+
+    override fun copy() {
         val options = listOf(
-            "-injars", input.absolutePath,
-            "-outjars", output.absolutePath,
-            "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
-            "-keep public class bf.* { public *; }",
-            "-dontobfuscate",
-            "-optimizationpasses", "5",
-            "-dontwarn", "java.lang.invoke.*",
-            "-dontnote",
-            "-assumenosideeffects", "public class bf.DslKt\$bfProgram\$Impl { kotlin.Unit getUnit(java.lang.Object); }",
-        )
+            "-injars", inputJar.get().asFile.absolutePath,
+            "-outjars", archiveFile.get().asFile.absolutePath
+        ) + this.options.get()
 
         val proguardConfig = ProguardConfiguration()
         ConfigurationParser(options.toTypedArray(), null).apply {
