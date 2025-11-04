@@ -54,13 +54,15 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
     if (opts.mainMethod) {
         cw.method(ACC_PUBLIC or ACC_STATIC, "main", desc<Void>(type<Array<String>>())) {
+            val out = local<OutputStreamWriter>(1)
+
             // new OutputStreamWriter(System.out)
             new<OutputStreamWriter>()
             dup
             dup
             getstatic<System>("out", "Ljava/io/OutputStream;")
             invokespecial<OutputStreamWriter>("<init>", desc<Void>(type<OutputStream>()))
-            store<OutputStreamWriter>(1)
+            store(out)
 
             // new InputStreamReader(System.in)
             new<InputStreamReader>()
@@ -69,13 +71,13 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             invokespecial<InputStreamReader>("<init>", desc<Void>(type<InputStream>()))
 
             invokestatic(className, "run", desc<Void>(type<Writer>(), type<Reader>()))
-            load<OutputStreamWriter>(1)
+            load(out)
             invokevirtual<OutputStreamWriter>("flush", desc<Void>())
             areturn<Void>()
 
             if (opts.localVariables) {
-                visitParameter("args", 0)
-                visitLocalVariable("out", "Ljava/io/Writer;", null, Label(), Label(), 1)
+                parameter("args")
+                localName(out, "out")
             }
         }
     }
@@ -100,47 +102,46 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             areturn<Int>()
 
             if (opts.localVariables) {
-                visitParameter("num", 0)
-                visitParameter("length", 0)
+                parameters("num", "length")
             }
         }
     }
 
-    val mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", desc<Void>(type<Writer>(), type<Reader>()), null, null)
+    val mw = cw.method(name = "run", descriptor = desc<Void>(type<Writer>(), type<Reader>()))
     mw.visitCode()
 
-    val output = 0
-    val input = 1
+    val output = mw.local<Writer>(0)
+    val input = mw.local<Reader>(1)
 
-    val tape = 2
+    val tape = mw.local<ByteArray>(2)
     mw.int(opts.tapeSize)
-    mw.visitIntInsn(NEWARRAY, T_BYTE)
-    mw.visitVarInsn(ASTORE, tape)
+    mw.newarray<Byte>()
+    mw.store(tape)
 
     // initialize pointer: int
-    val pointer = 3
+    val pointer = mw.local<Int>(3)
     mw.int(opts.tapeSize / 2)
-    mw.visitVarInsn(ISTORE, pointer)
+    mw.store(pointer)
 
-    val copyValue = 4
+    val copyValue = mw.local<Int>(4)
 
     fun MethodVisitor.addOffset(offset: Int) {
         if (offset == 0) return
         int(offset.absoluteValue)
-        visitInsn(if (offset >= 0) IADD else ISUB)
+        if (offset >= 0) iadd else isub
 
         if (opts.overflowProtection) {
             if (tapeSizeIsPowerOf2) {
                 int(opts.tapeSize - 1)
-                visitInsn(IAND)
+                iand
             } else {
                 int(opts.tapeSize)
-                visitInsn(IREM)
+                irem
 
                 if (offset < 0) {
-                    visitVarInsn(ALOAD, tape)
-                    visitInsn(ARRAYLENGTH)
-                    visitMethodInsn(INVOKESTATIC, className, "w", "(II)I", false)
+                    load(tape)
+                    arraylength
+                    invokestatic(className, "w", "(II)I")
                 }
             }
         }
@@ -161,15 +162,12 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
                     writeOp(op)
                 }
 
-                load<Int>(pointer)
+                load(pointer)
                 areturn<Int>()
 
                 if (opts.localVariables) {
-                    visitParameter("out", 0)
-                    visitParameter("in", 0)
-                    visitParameter("tape", 0)
-                    visitParameter("pointer", 0)
-                    visitLocalVariable("copyValue", "I", null, Label(), Label(), copyValue)
+                    parameters("out", "in", "tape", "pointer")
+                    localName(copyValue, "copyValue")
                 }
             }
             methodName
@@ -179,14 +177,14 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     fun MethodVisitor.writeOp(op: BFOperation): Unit = when(op) {
         is PointerMove -> {
             // pointer += op.value
-            load<Int>(pointer)
+            load(pointer)
             addOffset(op.value)
-            store<Int>(pointer)
+            store(pointer)
         }
         is ValueChange -> {
             // tape[pointer + op.offset] += op.value
-            load<ByteArray>(tape)
-            load<Int>(pointer)
+            load(tape)
+            load(pointer)
             addOffset(op.offset)
 
             dup2
@@ -200,10 +198,10 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         }
         is Print -> {
             // stdout.write(tape[pointer + op.offset])
-            load<Writer>(output)
+            load(output)
 
-            load<ByteArray>(tape)
-            load<Int>(pointer)
+            load(tape)
+            load(pointer)
             addOffset(op.offset)
             visitInsn(BALOAD)
 
@@ -214,11 +212,11 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         }
         is Input -> {
             // tape[pointer + op.offset] = (byte) stdin.read()
-            load<ByteArray>(tape)
-            load<Int>(pointer)
+            load(tape)
+            load(pointer)
             addOffset(op.offset)
 
-            load<Reader>(input)
+            load(input)
             invokevirtual<Reader>("read", desc<Int>())
 //            i2b
 
@@ -230,8 +228,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             val loopEnd = Label()
             mark(loopStart)
             // if (tape[pointer] == 0) break
-            load<ByteArray>(tape)
-            load<Int>(pointer)
+            load(tape)
+            load(pointer)
             baload
             ifeq(loopEnd)
 
@@ -239,12 +237,12 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
                 val methodName = makeLoopBody(op) { writeOp(it) }
 
                 // call the loop body
-                load<Writer>(output)
-                load<Reader>(input)
-                load<ByteArray>(tape)
-                load<Int>(pointer)
+                load(output)
+                load(input)
+                load(tape)
+                load(pointer)
                 invokestatic(className, methodName, loopMethodDescriptor)
-                store<Int>(pointer)
+                store(pointer)
             } else {
                 for (op in op) {
                     writeOp(op)
@@ -257,31 +255,31 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         }
         is SetToConstant -> {
             // tape[pointer + op.offset] = op.value
-            load<ByteArray>(tape)
-            load<Int>(pointer)
+            load(tape)
+            load(pointer)
             addOffset(op.offset)
             int(op.value.toInt())
             bastore
         }
         is Copy -> {
             // currentValue = tape[pointer] & 0xFF
-            load<ByteArray>(tape)
-            load<Int>(pointer)
+            load(tape)
+            load(pointer)
             baload
             int(0xFF)
             iand
-            store<Int>(copyValue)
+            store(copyValue)
 
             // tape[pointer] = 0
-            load<ByteArray>(tape)
-            load<Int>(pointer)
+            load(tape)
+            load(pointer)
             int(0)
             bastore
 
             for ((offset, multiplier) in op.multipliers) {
                 // tape[pointer + offset] += (byte) (currentValue * multiplier)
-                load<ByteArray>(tape)
-                load<Int>(pointer)
+                load(tape)
+                load(pointer)
                 addOffset(offset)
 
                 dup2
@@ -289,7 +287,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 //                int(0xFF)
 //                iand
 
-                load<Int>(copyValue)
+                load(copyValue)
                 if (multiplier.absoluteValue != 1) {
                     int(multiplier.absoluteValue)
                     imul
@@ -307,12 +305,12 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     }
 
     if (opts.localVariables) {
-        mw.visitParameter("out", 0)
-        mw.visitParameter("in", 0)
-
-        mw.visitLocalVariable("tape", "[B", null, Label(), Label(), tape)
-        mw.visitLocalVariable("pointer", "I", null, Label(), Label(), pointer)
-        mw.visitLocalVariable("copyValue", "I", null, Label(), Label(), copyValue)
+        mw.parameters("out", "in")
+        mw.locals(
+            tape to "tape",
+            pointer to "pointer",
+            copyValue to "copyValue",
+        )
     }
 
     mw.areturn<Void>()

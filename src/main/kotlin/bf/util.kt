@@ -16,7 +16,6 @@ fun Int.wrappingAdd(value: Int, limit: Int): Int {
 object SysOutWriter : FilterWriter(nullWriter()) {
     override fun write(c: Int) {
         print(c.toChar())
-        Thread.sleep(10)
     }
 }
 
