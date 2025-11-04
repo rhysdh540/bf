@@ -3,11 +3,6 @@
 
 package bf
 
-import org.objectweb.asm.ClassWriter
-import org.objectweb.asm.Opcodes.ACC_PUBLIC
-import org.objectweb.asm.Opcodes.ACC_STATIC
-import org.objectweb.asm.Type
-import org.objectweb.asm.commons.InstructionAdapter
 import java.io.FilterWriter
 
 fun Int.wrappingAdd(value: Int, limit: Int): Int {
@@ -21,6 +16,7 @@ fun Int.wrappingAdd(value: Int, limit: Int): Int {
 object SysOutWriter : FilterWriter(nullWriter()) {
     override fun write(c: Int) {
         print(c.toChar())
+        Thread.sleep(10)
     }
 }
 
@@ -37,20 +33,3 @@ class DefaultMap<K, V>(val initializer: DefaultMap<K, V>.(K) -> V, private val b
 fun <K, V> defaultMap(initializer: DefaultMap<K, V>.(K) -> V): DefaultMap<K, V> {
     return DefaultMap(initializer, mutableMapOf())
 }
-
-fun ClassWriter.method(
-    access: Int = ACC_PUBLIC or ACC_STATIC,
-    name: String,
-    descriptor: String,
-    signature: String? = null,
-    exceptions: Array<String>? = null,
-    block: InstructionAdapter.() -> Unit
-) {
-    val mv = InstructionAdapter(visitMethod(access, name, descriptor, signature, exceptions))
-    mv.visitCode()
-    mv.block()
-    mv.visitMaxs(0, 0)
-    mv.visitEnd()
-}
-
-inline fun <reified T> type(): Type = Type.getType(T::class.java)

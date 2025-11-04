@@ -87,7 +87,7 @@ fun main(args: Array<String>) {
             continue
         }
 
-        if (arg in arrayOf("--export", "-e")) {
+        if (arg in arrayOf("--export", "-E")) {
             export = true
             continue
         }
@@ -114,8 +114,8 @@ fun main(args: Array<String>) {
                     'S' -> strip = true
                     'c' -> compiled = true
                     'i' -> compiled = false
-                    'e' -> export = true
-                    's' -> nextIsString = true
+                    'E' -> export = true
+                    'e' -> nextIsString = true
                     'o' -> overflowProtection = true
                     't' -> time = true
                     else -> {

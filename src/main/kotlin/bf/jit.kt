@@ -4,13 +4,15 @@
 package bf
 
 import org.objectweb.asm.*
+import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.Opcodes.*
 import org.objectweb.asm.commons.CodeSizeEvaluator
-import org.objectweb.asm.commons.InstructionAdapter
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.analysis.AnalyzerException
 import org.objectweb.asm.util.CheckClassAdapter
+import java.io.InputStream
 import java.io.InputStreamReader
+import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.io.PrintWriter
 import java.io.Reader
@@ -51,35 +53,25 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
 
     if (opts.mainMethod) {
-        cw.method(ACC_PUBLIC or ACC_STATIC, "main", "([Ljava/lang/String;)V") {
+        cw.method(ACC_PUBLIC or ACC_STATIC, "main", desc<Void>(type<Array<String>>())) {
             // new OutputStreamWriter(System.out)
-            anew(type<OutputStreamWriter>())
-            dup()
-            dup()
-            getstatic("java/io/PrintStream", "out", "Ljava/io/OutputStream;")
-            invokespecial(
-                "java/io/OutputStreamWriter",
-                "<init>",
-                "(Ljava/io/OutputStream;)V",
-                false
-            )
-            store(1, type<Object>())
+            new<OutputStreamWriter>()
+            dup
+            dup
+            getstatic<System>("out", "Ljava/io/OutputStream;")
+            invokespecial<OutputStreamWriter>("<init>", desc<Void>(type<OutputStream>()))
+            store<OutputStreamWriter>(1)
+
             // new InputStreamReader(System.in)
-            anew(type<InputStreamReader>())
-            dup()
-            getstatic("java/lang/System", "in", "Ljava/io/InputStream;")
-            invokespecial(
-                "java/io/InputStreamReader",
-                "<init>",
-                "(Ljava/io/InputStream;)V",
-                false
-            )
+            new<InputStreamReader>()
+            dup
+            getstatic<System>("in", "Ljava/io/InputStream;")
+            invokespecial<InputStreamReader>("<init>", desc<Void>(type<InputStream>()))
 
-
-            invokestatic(className, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", false)
-            load(1, type<Object>())
-            invokevirtual("java/io/OutputStreamWriter", "flush", "()V", false)
-            visitInsn(RETURN)
+            invokestatic(className, "run", desc<Void>(type<Writer>(), type<Reader>()))
+            load<OutputStreamWriter>(1)
+            invokevirtual<OutputStreamWriter>("flush", desc<Void>())
+            areturn<Void>()
 
             if (opts.localVariables) {
                 visitParameter("args", 0)
@@ -97,15 +89,15 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             // return num < 0 ? num + length : num
 
             val negative = Label()
-            load(0, Type.INT_TYPE)
+            load<Int>(0)
             iflt(negative)
-            load(0, Type.INT_TYPE)
-            areturn(Type.INT_TYPE)
+            load<Int>(0)
+            areturn<Int>()
             mark(negative)
-            load(0, Type.INT_TYPE)
-            load(1, Type.INT_TYPE)
-            add(Type.INT_TYPE)
-            areturn(Type.INT_TYPE)
+            load<Int>(0)
+            load<Int>(1)
+            iadd
+            areturn<Int>()
 
             if (opts.localVariables) {
                 visitParameter("num", 0)
@@ -114,35 +106,35 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         }
     }
 
-    val mw = InstructionAdapter(cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", "(Ljava/io/Writer;Ljava/io/Reader;)V", null, null))
+    val mw = cw.visitMethod(ACC_PUBLIC or ACC_STATIC, "run", desc<Void>(type<Writer>(), type<Reader>()), null, null)
     mw.visitCode()
 
     val output = 0
     val input = 1
 
     val tape = 2
-    mw.pushIntConstant(opts.tapeSize)
+    mw.int(opts.tapeSize)
     mw.visitIntInsn(NEWARRAY, T_BYTE)
     mw.visitVarInsn(ASTORE, tape)
 
     // initialize pointer: int
     val pointer = 3
-    mw.pushIntConstant(opts.tapeSize / 2)
+    mw.int(opts.tapeSize / 2)
     mw.visitVarInsn(ISTORE, pointer)
 
     val copyValue = 4
 
     fun MethodVisitor.addOffset(offset: Int) {
         if (offset == 0) return
-        pushIntConstant(offset.absoluteValue)
+        int(offset.absoluteValue)
         visitInsn(if (offset >= 0) IADD else ISUB)
 
         if (opts.overflowProtection) {
             if (tapeSizeIsPowerOf2) {
-                pushIntConstant(opts.tapeSize - 1)
+                int(opts.tapeSize - 1)
                 visitInsn(IAND)
             } else {
-                pushIntConstant(opts.tapeSize)
+                int(opts.tapeSize)
                 visitInsn(IREM)
 
                 if (offset < 0) {
@@ -157,16 +149,10 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     // bf code has a lot of repeated loops, so we can reuse the same method
     val loopCache = mutableMapOf<Loop, String>()
     var loopI = 1
-    val loopMethodDescriptor = Type.getMethodDescriptor(
-        Type.INT_TYPE,
-        type<Writer>(),
-        type<Reader>(),
-        type<ByteArray>(),
-        Type.INT_TYPE
-    )
+    val loopMethodDescriptor = desc<Int>(type<Writer>(), type<Reader>(), type<ByteArray>(), type<Int>())
 
     // loop bodies go in separate functions, because the jvm can't handle large methods well
-    fun makeLoopBody(loop: Loop, writeOp: InstructionAdapter.(BFOperation) -> Unit): String {
+    fun makeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit): String {
         return loopCache.getOrPut(loop) {
             val methodName = "loop$loopI"
             loopI++
@@ -175,8 +161,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
                     writeOp(op)
                 }
 
-                visitVarInsn(ILOAD, pointer)
-                visitInsn(IRETURN)
+                load<Int>(pointer)
+                areturn<Int>()
 
                 if (opts.localVariables) {
                     visitParameter("out", 0)
@@ -190,75 +176,75 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         }
     }
 
-    fun InstructionAdapter.writeOp(op: BFOperation): Unit = when(op) {
+    fun MethodVisitor.writeOp(op: BFOperation): Unit = when(op) {
         is PointerMove -> {
             // pointer += op.value
-            visitVarInsn(ILOAD, pointer)
+            load<Int>(pointer)
             addOffset(op.value)
-            visitVarInsn(ISTORE, pointer)
+            store<Int>(pointer)
         }
         is ValueChange -> {
             // tape[pointer + op.offset] += op.value
-            visitVarInsn(ALOAD, tape)
-            visitVarInsn(ILOAD, pointer)
+            load<ByteArray>(tape)
+            load<Int>(pointer)
             addOffset(op.offset)
 
-            visitInsn(DUP2)
-            visitInsn(BALOAD)
+            dup2
+            baload
 
-            pushIntConstant(op.value.absoluteValue)
-            visitInsn(if (op.value >= 0) IADD else ISUB)
-//            visitInsn(I2B)
+            int(op.value.absoluteValue)
+            if (op.value >= 0) iadd else isub
+//            i2b
 
-            visitInsn(BASTORE)
+            bastore
         }
         is Print -> {
             // stdout.write(tape[pointer + op.offset])
-            visitVarInsn(ALOAD, output)
+            load<Writer>(output)
 
-            visitVarInsn(ALOAD, tape)
-            visitVarInsn(ILOAD, pointer)
+            load<ByteArray>(tape)
+            load<Int>(pointer)
             addOffset(op.offset)
             visitInsn(BALOAD)
 
-//            visitIntInsn(SIPUSH, 0xFF)
-//            visitInsn(IAND)
+            int(0xFF)
+            iand
 
-            visitMethodInsn(INVOKEVIRTUAL, "java/io/Writer", "write", "(I)V", false)
+            invokevirtual<Writer>("write", desc<Void>(type<Int>()))
         }
         is Input -> {
             // tape[pointer + op.offset] = (byte) stdin.read()
-            visitVarInsn(ALOAD, tape)
-            visitVarInsn(ILOAD, pointer)
+            load<ByteArray>(tape)
+            load<Int>(pointer)
             addOffset(op.offset)
 
-            visitVarInsn(ALOAD, input)
-            visitMethodInsn(INVOKEVIRTUAL, "java/io/Reader", "read", "()I", false)
-//            visitInsn(I2B)
+            load<Reader>(input)
+            invokevirtual<Reader>("read", desc<Int>())
+//            i2b
 
-            visitInsn(BASTORE)
+            bastore
         }
         is Loop -> {
             // while (tape[pointer] != 0) { ... }
             val loopStart = Label()
             val loopEnd = Label()
-            visitLabel(loopStart)
+            mark(loopStart)
             // if (tape[pointer] == 0) break
-            visitVarInsn(ALOAD, tape)
-            visitVarInsn(ILOAD, pointer)
-            visitInsn(BALOAD)
-            visitJumpInsn(IFEQ, loopEnd)
+            load<ByteArray>(tape)
+            load<Int>(pointer)
+            baload
+            ifeq(loopEnd)
 
             if (op.any { it is Loop }) {
                 val methodName = makeLoopBody(op) { writeOp(it) }
 
                 // call the loop body
-                visitVarInsn(ALOAD, output)
-                visitVarInsn(ALOAD, input)
-                visitVarInsn(ALOAD, tape)
-                visitVarInsn(ILOAD, pointer)
-                visitMethodInsn(INVOKESTATIC, className, methodName, loopMethodDescriptor, false)
-                visitVarInsn(ISTORE, pointer)
+                load<Writer>(output)
+                load<Reader>(input)
+                load<ByteArray>(tape)
+                load<Int>(pointer)
+                invokestatic(className, methodName, loopMethodDescriptor)
+                store<Int>(pointer)
             } else {
                 for (op in op) {
                     writeOp(op)
@@ -266,52 +252,52 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             }
 
             // jump back to the start of the loop
-            visitJumpInsn(GOTO, loopStart)
-            visitLabel(loopEnd)
+            goto(loopStart)
+            mark(loopEnd)
         }
         is SetToConstant -> {
             // tape[pointer + op.offset] = op.value
-            visitVarInsn(ALOAD, tape)
-            visitVarInsn(ILOAD, pointer)
+            load<ByteArray>(tape)
+            load<Int>(pointer)
             addOffset(op.offset)
-            pushIntConstant(op.value.toInt())
-            visitInsn(BASTORE)
+            int(op.value.toInt())
+            bastore
         }
         is Copy -> {
             // currentValue = tape[pointer] & 0xFF
-            visitVarInsn(ALOAD, tape)
-            visitVarInsn(ILOAD, pointer)
-            visitInsn(BALOAD)
-//            pushIntConstant(0xFF)
-//            visitInsn(IAND)
-            visitVarInsn(ISTORE, copyValue)
+            load<ByteArray>(tape)
+            load<Int>(pointer)
+            baload
+            int(0xFF)
+            iand
+            store<Int>(copyValue)
 
             // tape[pointer] = 0
-            visitVarInsn(ALOAD, tape)
-            visitVarInsn(ILOAD, pointer)
-            pushIntConstant(0)
-            visitInsn(BASTORE)
+            load<ByteArray>(tape)
+            load<Int>(pointer)
+            int(0)
+            bastore
 
             for ((offset, multiplier) in op.multipliers) {
                 // tape[pointer + offset] += (byte) (currentValue * multiplier)
-                visitVarInsn(ALOAD, tape)
-                visitVarInsn(ILOAD, pointer)
+                load<ByteArray>(tape)
+                load<Int>(pointer)
                 addOffset(offset)
 
-                visitInsn(DUP2)
-                visitInsn(BALOAD)
-//                visitIntInsn(SIPUSH, 0xFF)
-//                visitInsn(IAND)
+                dup2
+                baload
+//                int(0xFF)
+//                iand
 
-                visitVarInsn(ILOAD, copyValue)
+                load<Int>(copyValue)
                 if (multiplier.absoluteValue != 1) {
-                    pushIntConstant(multiplier.absoluteValue)
-                    visitInsn(IMUL)
+                    int(multiplier.absoluteValue)
+                    imul
                 }
-                visitInsn(if (multiplier >= 0) IADD else ISUB)
-//                visitInsn(I2B)
+                if (multiplier >= 0) iadd else isub
+//                i2b
 
-                visitInsn(BASTORE)
+                bastore
             }
         }
     }
@@ -329,7 +315,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         mw.visitLocalVariable("copyValue", "I", null, Label(), Label(), copyValue)
     }
 
-    mw.visitInsn(RETURN)
+    mw.areturn<Void>()
     mw.visitMaxs(0, 0)
     mw.visitEnd()
     cw.visitEnd()
@@ -391,21 +377,6 @@ private fun verifyClass(clazz: ByteArray) {
         CheckClassAdapter.verify(ClassReader(clazz), false, PrintWriter(Writer.nullWriter()))
     } catch (_: AnalyzerException) {
         CheckClassAdapter.verify(ClassReader(clazz), true, PrintWriter(System.err))
-    }
-}
-
-private fun MethodVisitor.pushIntConstant(value: Int) {
-    when (value) {
-        -1 -> visitInsn(ICONST_M1)
-        0 -> visitInsn(ICONST_0)
-        1 -> visitInsn(ICONST_1)
-        2 -> visitInsn(ICONST_2)
-        3 -> visitInsn(ICONST_3)
-        4 -> visitInsn(ICONST_4)
-        5 -> visitInsn(ICONST_5)
-        in Byte.MIN_VALUE..Byte.MAX_VALUE -> visitIntInsn(BIPUSH, value)
-        in Short.MIN_VALUE..Short.MAX_VALUE -> visitIntInsn(SIPUSH, value)
-        else -> visitLdcInsn(value)
     }
 }
 
