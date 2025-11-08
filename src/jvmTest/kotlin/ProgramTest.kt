@@ -1,12 +1,13 @@
 import bf.CompileOptions
+import bf.NullInputProvider
+import bf.NullOutputConsumer
 import bf.bfCompile
 import bf.opt.bfOptimise
 import bf.bfParse
 import bf.bfRun
 import bf.opt.bfStrip
-import java.io.Reader.nullReader
+import bf.toOutputConsumer
 import java.io.StringWriter
-import java.io.Writer.nullWriter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.measureTime
@@ -40,7 +41,7 @@ fun main() {
 
     val interpretedTime = measureTime {
         repeat(runs) {
-            bfRun(program, stdin = nullReader(), stdout = nullWriter())
+            bfRun(program, NullOutputConsumer, NullInputProvider)
         }
     }
 
@@ -50,7 +51,7 @@ fun main() {
 
     val jitTime = measureTime {
         repeat(runs) {
-            compiled(nullWriter(), nullReader())
+            compiled(NullOutputConsumer, NullInputProvider)
         }
     }
 
@@ -78,7 +79,7 @@ private fun getResource(name: String): String {
 private fun programBench(program: String): String {
     val parsed = bfParse(program)
     val optimised = bfOptimise(parsed)
-    val output = StringWriter()
+    val output = StringWriter().toOutputConsumer()
     bfRun(optimised, stdout = output)
-    return output.toString()
+    return output.delegate.toString()
 }

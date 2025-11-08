@@ -1,22 +1,11 @@
-@file:JvmName("Brainfuck")
-@file:JvmMultifileClass
-
 package bf
 
-import java.io.FilterWriter
+val NullOutputConsumer = OutputConsumer { }
+val NullInputProvider = InputProvider { -1 }
 
 fun Int.wrappingAdd(value: Int, limit: Int): Int {
     val result = (this + value) % limit
     return if (result < 0) result + limit else result
-}
-
-/**
- * Flushes the output stream after every write to make output smoother
- */
-object SysOutWriter : FilterWriter(nullWriter()) {
-    override fun write(c: Int) {
-        print(c.toChar())
-    }
 }
 
 operator fun <T> MutableList<T>.set(range: IntRange, newList: Iterable<T>) {

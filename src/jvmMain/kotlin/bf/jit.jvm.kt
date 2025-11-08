@@ -1,21 +1,15 @@
-@file:JvmName("Brainfuck")
-@file:JvmMultifileClass
-
 package bf
 
-import org.objectweb.asm.*
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Label
 import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.Opcodes.*
 import org.objectweb.asm.commons.CodeSizeEvaluator
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.analysis.AnalyzerException
 import org.objectweb.asm.util.CheckClassAdapter
-import java.io.InputStream
-import java.io.InputStreamReader
-import java.io.OutputStream
-import java.io.OutputStreamWriter
 import java.io.PrintWriter
-import java.io.Reader
 import java.io.Writer
 import java.lang.invoke.MethodHandle
 import java.lang.invoke.MethodHandles
@@ -26,61 +20,11 @@ import kotlin.io.path.writeBytes
 import kotlin.math.absoluteValue
 import kotlin.random.Random
 
-/**
- * Options for customizing the jit
- * @param tapeSize the size of the tape to use. Powers of two are recommended for performance.
- * @param overflowProtection whether to wrap tape accesses. Slows down the program significantly, but can prevent crashes.
- *
- * @param export whether to export the class to a file in the current directory
- * @param localVariables whether to generate local variable names in the class
- * @param mainMethod whether to generate a main method in the class,
- *                   which when run will run the program with `System.in` and `System.out`
- */
-data class CompileOptions(
-    val tapeSize: Int = TAPE_SIZE,
-    val overflowProtection: Boolean = true,
-
-    val export: Boolean = false,
-    val localVariables: Boolean = export,
-    val mainMethod: Boolean = export,
-)
-
-@JvmName("compile")
 @OptIn(ExperimentalStdlibApi::class)
-fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOptions()): (Writer, Reader) -> Unit {
+actual fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions): (OutputConsumer, InputProvider) -> Unit {
     val className = "BFProgram$${Random.nextInt().toHexString()}"
     val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
     cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
-
-    if (opts.mainMethod) {
-        cw.method(ACC_PUBLIC or ACC_STATIC, "main", desc<Void>(type<Array<String>>())) {
-            val out = local<OutputStreamWriter>(1)
-
-            // new OutputStreamWriter(System.out)
-            new<OutputStreamWriter>()
-            dup
-            dup
-            getstatic<System>("out", "Ljava/io/OutputStream;")
-            invokespecial<OutputStreamWriter>("<init>", desc<Void>(type<OutputStream>()))
-            store(out)
-
-            // new InputStreamReader(System.in)
-            new<InputStreamReader>()
-            dup
-            getstatic<System>("in", "Ljava/io/InputStream;")
-            invokespecial<InputStreamReader>("<init>", desc<Void>(type<InputStream>()))
-
-            invokestatic(className, "run", desc<Void>(type<Writer>(), type<Reader>()))
-            load(out)
-            invokevirtual<OutputStreamWriter>("flush", desc<Void>())
-            areturn<Void>()
-
-            if (opts.localVariables) {
-                parameter("args")
-                localName(out, "out")
-            }
-        }
-    }
 
     val tapeSizeIsPowerOf2 = opts.tapeSize and (opts.tapeSize - 1) == 0
 
@@ -107,11 +51,11 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         }
     }
 
-    val mw = cw.method(name = "run", descriptor = desc<Void>(type<Writer>(), type<Reader>()))
+    val mw = cw.method(name = "run", descriptor = desc<Void>(type<OutputConsumer>(), type<InputProvider>()))
     mw.visitCode()
 
-    val output = mw.local<Writer>(0)
-    val input = mw.local<Reader>(1)
+    val output = mw.local<OutputConsumer>(0)
+    val input = mw.local<InputProvider>(1)
 
     val tape = mw.local<ByteArray>(2)
     mw.int(opts.tapeSize)
@@ -150,7 +94,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     // bf code has a lot of repeated loops, so we can reuse the same method
     val loopCache = mutableMapOf<Loop, String>()
     var loopI = 1
-    val loopMethodDescriptor = desc<Int>(type<Writer>(), type<Reader>(), type<ByteArray>(), type<Int>())
+    val loopMethodDescriptor = desc<Int>(type<OutputConsumer>(), type<InputProvider>(), type<ByteArray>(), type<Int>())
 
     // loop bodies go in separate functions, because the jvm can't handle large methods well
     fun makeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit): String {
@@ -208,7 +152,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             int(0xFF)
             iand
 
-            invokevirtual<Writer>("write", desc<Void>(type<Int>()))
+            invokeinterface<OutputConsumer>("write", desc<Void>(type<Int>()))
         }
         is Input -> {
             // tape[pointer + op.offset] = (byte) stdin.read()
@@ -217,7 +161,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             addOffset(op.offset)
 
             load(input)
-            invokevirtual<Reader>("read", desc<Int>())
+            invokeinterface<InputProvider>("read", desc<Int>())
 //            i2b
 
             bastore
@@ -329,7 +273,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
     val cl = loadClass(bytes)
     val lookup = MethodHandles.lookup()
-    val method = lookup.findStatic(cl, "run", MethodType.methodType(Void.TYPE, Writer::class.java, Reader::class.java))
+    val type = MethodType.methodType(Void.TYPE, OutputConsumer::class.java, InputProvider::class.java)
+    val method = lookup.findStatic(cl, "run", type)
     return convertHandle(method)
 }
 
@@ -344,11 +289,11 @@ private fun loadClass(bytes: ByteArray): Class<*> {
     return cl.loadClass(name)
 }
 
-private fun convertHandle(handle: MethodHandle): (Writer, Reader) -> Unit {
+private fun convertHandle(handle: MethodHandle): (OutputConsumer, InputProvider) -> Unit {
     assert(handle.type().returnType() == Void.TYPE)
     assert(handle.type().parameterCount() == 2)
-    assert(handle.type().parameterType(0) == Writer::class.java)
-    assert(handle.type().parameterType(1) == Reader::class.java)
+    assert(handle.type().parameterType(0) == OutputConsumer::class.java)
+    assert(handle.type().parameterType(1) == InputProvider::class.java)
     return { writer, reader -> handle.invoke(writer, reader) }
 }
 

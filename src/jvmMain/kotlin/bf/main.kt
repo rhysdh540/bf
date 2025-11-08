@@ -5,12 +5,49 @@ import bf.opt.bfOptimise
 import bf.opt.bfStrip
 import kotlin.io.path.Path
 import kotlin.io.path.readText
+import kotlin.time.Duration
 import kotlin.time.measureTime
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         println("""
-            |Usage: bf.jar <program.b>
+            |bf: the Brainfuck toolkit
+            |Usage: bf.jar <command> [options]
+            |Commands:
+            |       run <program.b>
+            |               Run the given Brainfuck program
+            |       generate <text>
+            |               Generate a Brainfuck program that outputs the given text
+        """.trimMargin())
+        return
+    }
+
+    val subargs = args.sliceArray(1 until args.size)
+    when (args[0]) {
+        "run" -> run(subargs)
+        "generate" -> generate(subargs)
+        else -> {
+            println("Unknown command: ${args[0]}")
+        }
+    }
+}
+
+fun generate(args: Array<String>) {
+    if (args.isEmpty() || args.contains("--help") || args.contains("-h")) {
+        println("""
+            |Usage: bf.jar generate <text>
+            |Options:
+            |       --help, -h
+            |               Show this help message
+        """.trimMargin())
+        return
+    }
+}
+
+fun run(args: Array<String>) {
+    if (args.isEmpty() || args.contains("--help") || args.contains("-h")) {
+        println("""
+            |Usage: bf.jar run <program.b>
             |Options:
             |       --help, -h
             |               Show this help message
@@ -24,9 +61,9 @@ fun main(args: Array<String>) {
             |               Compile the following programs to java bytecode
             |       --interpreted, -i
             |               Run the following programs in interpreted mode (default)
-            |       --string, -s
-            |               Run the next argument as a string
-            |       --export, -e
+            |       --eval, -e
+            |               Run the next argument directly as a Brainfuck program
+            |       --export, -E
             |               Export the following programs to a file in `.bf.out`
             |       --time, -t
             |               Time the following programs
@@ -153,9 +190,9 @@ private fun runProgram(
 
     val time = measureTime(if (opts != null) {
         val compiled = bfCompile(program, opts);
-        { compiled(SysOutWriter, System.`in`.reader()) }
+        { compiled(SysOutWriter, SysInReader) }
     } else {
-        { bfRun(program) }
+        { bfRun(program, SysOutWriter, SysInReader) }
     })
 
     if (printTime) {
@@ -163,7 +200,7 @@ private fun runProgram(
     }
 }
 
-private fun formatTime(time: kotlin.time.Duration): String {
+private fun formatTime(time: Duration): String {
     val seconds = time.inWholeSeconds
     val milliseconds = time.inWholeMilliseconds % 1000
     return if (seconds > 0) {

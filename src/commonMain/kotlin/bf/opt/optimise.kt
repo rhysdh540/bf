@@ -1,5 +1,3 @@
-@file:JvmName("BrainfuckOptimisation")
-
 package bf.opt
 
 import bf.BFOperation
@@ -20,7 +18,6 @@ internal interface OptimisationPass {
     fun run(program: MutableList<BFOperation>)
 }
 
-@JvmName("optimise")
 fun bfOptimise(program: Iterable<BFOperation>): List<BFOperation> {
     val program = program.toMutableList()
 
@@ -45,7 +42,6 @@ fun bfOptimise(program: Iterable<BFOperation>): List<BFOperation> {
  * - remove any [bf.PointerMove], [bf.ValueChange] or [bf.SetToConstant] operations at the end of the program
  * - removes the second and after of any set of consecutive loops
  */
-@JvmName("strip")
 fun bfStrip(program: Iterable<BFOperation>): List<BFOperation> {
     val program = program.toMutableList()
 

@@ -1,9 +1,10 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import proguard.ConfigurationParser
 import proguard.ProGuard
 import proguard.Configuration as ProguardConfiguration
 
 plugins {
-    kotlin("jvm") version "2.2.21"
+    kotlin("multiplatform") version "2.2.21"
     id("com.gradleup.shadow") version("9.2.2")
 }
 
@@ -21,13 +22,25 @@ repositories {
 
 kotlin {
     jvmToolchain(21)
-}
+    jvm()
+    js(IR) {
+        browser()
+    }
 
-dependencies {
-    implementation("org.ow2.asm:asm-util:9.8")
-    implementation("org.ow2.asm:asm-commons:9.8")
+    sourceSets {
+        val jvmMain by getting {
+            dependencies {
+                implementation("org.ow2.asm:asm-util:9.9")
+                implementation("org.ow2.asm:asm-commons:9.9")
+            }
+        }
 
-    testImplementation(kotlin("test"))
+        val jvmTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
+    }
 }
 
 tasks.withType<AbstractArchiveTask> {
@@ -37,11 +50,11 @@ tasks.withType<AbstractArchiveTask> {
     archiveClassifier = ""
 }
 
-tasks.jar {
+tasks.named<Jar>("jvmJar") {
     manifest.attributes["Main-Class"] = "bf.Main"
 }
 
-tasks.shadowJar {
+tasks.named<ShadowJar>("shadowJar") {
     manifest.attributes["Main-Class"] = "bf.Main"
 
     exclude("**/*.kotlin_builtins")
@@ -56,7 +69,7 @@ tasks.shadowJar {
 }
 
 tasks.register<ProGuardTask>("proguard") {
-    inputJar = tasks.shadowJar.flatMap { it.archiveFile }
+    inputJar = tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile }
 
     options = listOf(
         "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
@@ -98,11 +111,11 @@ tasks.assemble {
     dependsOn(tasks["proguard"])
 }
 
-tasks.test {
+tasks.named<Test>("jvmTest") {
     useJUnitPlatform()
 }
 
-for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
+for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
     if (file.isFile && file.extension == "b") {
         val name = file.nameWithoutExtension
 
@@ -110,6 +123,7 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
+                "run",
                 "--optimise", "--strip",
                 "--compile", "--export",
                 "--time",
@@ -126,7 +140,7 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
                 }
             }
 
-            classpath = sourceSets["main"].runtimeClasspath
+            classpath = sourceSets["jvmMain"].runtimeClasspath
             mainClass.set("bf.Main")
             javaLauncher = javaToolchains.launcherFor {
                 languageVersion.set(JavaLanguageVersion.of(21))
