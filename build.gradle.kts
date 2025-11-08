@@ -24,7 +24,14 @@ kotlin {
     jvmToolchain(21)
     jvm()
     js(IR) {
-        browser()
+        browser {
+            testTask {
+                useKarma {
+                    useKarma()
+                    useChromiumHeadless()
+                }
+            }
+        }
     }
 
     sourceSets {
@@ -35,11 +42,12 @@ kotlin {
             }
         }
 
-        val jvmTest by getting {
+        val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
             }
         }
+
     }
 }
 
