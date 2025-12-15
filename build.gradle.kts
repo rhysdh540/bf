@@ -24,8 +24,8 @@ kotlin {
 }
 
 dependencies {
-    implementation("org.ow2.asm:asm-util:9.8")
-    implementation("org.ow2.asm:asm-commons:9.8")
+    implementation("org.ow2.asm:asm-util:9.9")
+    implementation("org.ow2.asm:asm-commons:9.9")
 
     testImplementation(kotlin("test"))
 }
