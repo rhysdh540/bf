@@ -38,18 +38,18 @@ tasks.withType<AbstractArchiveTask> {
 }
 
 tasks.jar {
-    manifest.attributes["Main-Class"] = "bf.Main"
+    manifest.attributes["Main-Class"] = "dev.rdh.bf.Main"
 }
 
 tasks.shadowJar {
-    manifest.attributes["Main-Class"] = "bf.Main"
+    manifest.attributes["Main-Class"] = "dev.rdh.bf.Main"
 
     exclude("**/*.kotlin_builtins")
 
-    relocate("org.objectweb.asm", "bf.asm")
-    relocate("kotlin", "bf.kotlin")
-    relocate("org.jetbrains.annotations", "bf.jbannotations")
-    relocate("org.intellij.lang.annotations", "bf.ijannotations")
+    relocate("org.objectweb.asm", "dev.rdh.bf.asm")
+    relocate("kotlin", "dev.rdh.bf.kotlin")
+    relocate("org.jetbrains.annotations", "dev.rdh.bf.jbannotations")
+    relocate("org.intellij.lang.annotations", "dev.rdh.bf.ijannotations")
 
     mergeServiceFiles()
     archiveClassifier = "fat"
@@ -60,13 +60,13 @@ tasks.register<ProGuardTask>("proguard") {
 
     options = listOf(
         "-libraryjars", "${System.getProperty("java.home")}/jmods/java.base.jmod",
-        "-keep public class bf.* { public *; }",
+        "-keep public class dev.rdh.bf.* { public *; }",
         "-dontobfuscate",
         "-optimizations", "!method/specialization/parametertype",
         "-optimizationpasses", "5",
         "-dontwarn", "java.lang.invoke.*",
         "-dontnote",
-        "-assumenosideeffects", $$"public class bf.DslKt$bfProgram$Impl { kotlin.Unit getUnit(java.lang.Object); }"
+        "-assumenosideeffects", $$"public class dev.rdh.bf.DslKt$bfProgram$Impl { kotlin.Unit getUnit(java.lang.Object); }"
     )
 
     archiveClassifier = ""
@@ -127,7 +127,7 @@ for (file in file("src/test/resources").listFiles() ?: emptyArray()) {
             }
 
             classpath = sourceSets["main"].runtimeClasspath
-            mainClass.set("bf.Main")
+            mainClass.set("dev.rdh.bf.Main")
             javaLauncher = javaToolchains.launcherFor {
                 languageVersion.set(JavaLanguageVersion.of(21))
             }

@@ -1,8 +1,9 @@
 @file:JvmName("Main")
-package bf
 
-import bf.opt.bfOptimise
-import bf.opt.bfStrip
+package dev.rdh.bf
+
+import dev.rdh.bf.opt.bfOptimise
+import dev.rdh.bf.opt.bfStrip
 import kotlin.io.path.Path
 import kotlin.io.path.readText
 import kotlin.time.measureTime

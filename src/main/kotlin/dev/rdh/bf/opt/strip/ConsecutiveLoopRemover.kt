@@ -1,10 +1,10 @@
-package bf.opt.strip
+package dev.rdh.bf.opt.strip
 
-import bf.BFOperation
-import bf.Copy
-import bf.Loop
-import bf.SetToConstant
-import bf.opt.OptimisationPass
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.Copy
+import dev.rdh.bf.Loop
+import dev.rdh.bf.SetToConstant
+import dev.rdh.bf.opt.OptimisationPass
 
 /**
  * Optimisation pass that removes consecutive loops and set-to-zero operations.

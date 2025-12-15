@@ -1,7 +1,7 @@
 @file:JvmName("Brainfuck")
 @file:JvmMultifileClass
 
-package bf
+package dev.rdh.bf
 
 interface ProgramDsl {
     fun moveRight(value: Int = 1)

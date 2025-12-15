@@ -1,7 +1,7 @@
-package bf.opt
+package dev.rdh.bf.opt
 
-import bf.BFOperation
-import bf.Loop
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.Loop
 
 /**
  * Optimisation pass that runs a set of other passes on the contents of loops.

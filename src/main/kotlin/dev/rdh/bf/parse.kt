@@ -1,7 +1,7 @@
 @file:JvmName("Brainfuck")
 @file:JvmMultifileClass
 
-package bf
+package dev.rdh.bf
 
 /**
  * Parses a Brainfuck program from a string into a list of [BFOperation]s.

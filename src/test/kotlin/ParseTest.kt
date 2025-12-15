@@ -1,5 +1,5 @@
-import bf.bfParse
-import bf.bfProgram
+import dev.rdh.bf.bfParse
+import dev.rdh.bf.bfProgram
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

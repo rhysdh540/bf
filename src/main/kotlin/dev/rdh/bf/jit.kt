@@ -1,7 +1,7 @@
 @file:JvmName("Brainfuck")
 @file:JvmMultifileClass
 
-package bf
+package dev.rdh.bf
 
 import org.objectweb.asm.*
 import org.objectweb.asm.MethodVisitor

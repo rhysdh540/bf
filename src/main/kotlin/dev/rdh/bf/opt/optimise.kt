@@ -1,12 +1,12 @@
 @file:JvmName("BrainfuckOptimisation")
 
-package bf.opt
+package dev.rdh.bf.opt
 
-import bf.BFOperation
-import bf.opt.strip.ConsecutiveLoopRemover
-import bf.opt.strip.DeadEndRemover
-import bf.opt.strip.DeadStartRemover
-import bf.opt.strip.ZeroRemover
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.opt.strip.ConsecutiveLoopRemover
+import dev.rdh.bf.opt.strip.DeadEndRemover
+import dev.rdh.bf.opt.strip.DeadStartRemover
+import dev.rdh.bf.opt.strip.ZeroRemover
 
 
 /**

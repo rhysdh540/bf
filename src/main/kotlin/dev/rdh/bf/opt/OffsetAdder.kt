@@ -1,12 +1,12 @@
-package bf.opt
+package dev.rdh.bf.opt
 
-import bf.BFOperation
-import bf.Input
-import bf.PointerMove
-import bf.Print
-import bf.SetToConstant
-import bf.ValueChange
-import bf.set
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.Input
+import dev.rdh.bf.PointerMove
+import dev.rdh.bf.Print
+import dev.rdh.bf.SetToConstant
+import dev.rdh.bf.ValueChange
+import dev.rdh.bf.set
 
 internal object OffsetAdder : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {

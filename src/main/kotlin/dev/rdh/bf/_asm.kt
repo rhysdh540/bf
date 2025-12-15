@@ -1,6 +1,6 @@
 @file:Suppress("NOTHING_TO_INLINE", "unused")
 
-package bf
+package dev.rdh.bf
 
 // inline boilerplate galore
 

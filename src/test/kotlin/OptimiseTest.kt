@@ -1,7 +1,7 @@
-import bf.opt.bfOptimise
-import bf.bfParse
-import bf.bfProgram
-import bf.opt.bfStrip
+import dev.rdh.bf.opt.bfOptimise
+import dev.rdh.bf.bfParse
+import dev.rdh.bf.bfProgram
+import dev.rdh.bf.opt.bfStrip
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

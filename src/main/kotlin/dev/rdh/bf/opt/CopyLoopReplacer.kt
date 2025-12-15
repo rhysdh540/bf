@@ -1,11 +1,11 @@
-package bf.opt
+package dev.rdh.bf.opt
 
-import bf.BFOperation
-import bf.Copy
-import bf.Loop
-import bf.PointerMove
-import bf.ValueChange
-import bf.defaultMap
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.Copy
+import dev.rdh.bf.Loop
+import dev.rdh.bf.PointerMove
+import dev.rdh.bf.ValueChange
+import dev.rdh.bf.defaultMap
 
 /**
  * Optimization pass that replaces copy loops with [Copy] operations.

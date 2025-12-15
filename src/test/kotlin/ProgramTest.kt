@@ -1,9 +1,9 @@
-import bf.CompileOptions
-import bf.bfCompile
-import bf.opt.bfOptimise
-import bf.bfParse
-import bf.bfRun
-import bf.opt.bfStrip
+import dev.rdh.bf.CompileOptions
+import dev.rdh.bf.bfCompile
+import dev.rdh.bf.opt.bfOptimise
+import dev.rdh.bf.bfParse
+import dev.rdh.bf.bfRun
+import dev.rdh.bf.opt.bfStrip
 import java.io.Reader.nullReader
 import java.io.StringWriter
 import java.io.Writer.nullWriter

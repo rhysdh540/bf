@@ -1,9 +1,9 @@
-package bf.opt
+package dev.rdh.bf.opt
 
-import bf.BFOperation
-import bf.Loop
-import bf.SetToConstant
-import bf.ValueChange
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.Loop
+import dev.rdh.bf.SetToConstant
+import dev.rdh.bf.ValueChange
 import kotlin.math.abs
 
 /**

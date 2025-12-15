@@ -1,9 +1,9 @@
-package bf.opt.strip
+package dev.rdh.bf.opt.strip
 
-import bf.BFOperation
-import bf.PointerMove
-import bf.ValueChange
-import bf.opt.OptimisationPass
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.PointerMove
+import dev.rdh.bf.ValueChange
+import dev.rdh.bf.opt.OptimisationPass
 
 /**
  * Removes [ValueChange] and [PointerMove] operations that have a value of 0.

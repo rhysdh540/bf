@@ -1,7 +1,7 @@
 @file:JvmName("Brainfuck")
 @file:JvmMultifileClass
 
-package bf
+package dev.rdh.bf
 
 /**
  * The size of the tape used in the Brainfuck interpreter.

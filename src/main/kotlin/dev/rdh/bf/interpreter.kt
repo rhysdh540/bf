@@ -1,7 +1,7 @@
 @file:JvmName("Brainfuck")
 @file:JvmMultifileClass
 
-package bf
+package dev.rdh.bf
 
 import java.io.InputStream
 import java.io.OutputStream

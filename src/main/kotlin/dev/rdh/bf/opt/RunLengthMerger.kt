@@ -1,8 +1,8 @@
-package bf.opt
+package dev.rdh.bf.opt
 
-import bf.BFOperation
-import bf.PointerMove
-import bf.ValueChange
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.PointerMove
+import dev.rdh.bf.ValueChange
 
 /**
  * Merges consecutive [PointerMove] and [ValueChange] operations into a single operation.

@@ -1,6 +1,6 @@
 @file:Suppress("NOTHING_TO_INLINE", "unused")
 
-package bf
+package dev.rdh.bf
 
 import org.objectweb.asm.ClassVisitor
 import org.objectweb.asm.Label
