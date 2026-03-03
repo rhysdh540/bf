@@ -30,37 +30,34 @@ internal object OffsetAdder : OptimisationPass {
 
             val newBlock = mutableListOf<BFOperation>()
             val currBlock = mutableListOf<BFOperation>()
-            var pointer = 0
+            var pointerDelta = 0
 
-            for (k in i until j) {
+            for (k in i..<j) {
                 val op = program[k]
-                if (op !is PointerMove) {
-                    pointer += op.offset
-                }
 
                 when (op) {
                     is Input -> {
                         newBlock.addAll(currBlock)
                         currBlock.clear()
-                        newBlock += Input(offset = pointer)
+                        newBlock += Input(offset = pointerDelta + op.offset)
                     }
 
                     is Print -> {
                         newBlock.addAll(currBlock)
                         currBlock.clear()
-                        newBlock += Print(offset = pointer)
+                        newBlock += Print(offset = pointerDelta + op.offset)
                     }
 
                     is ValueChange -> {
-                        currBlock += ValueChange(offset = pointer, value = op.value)
+                        currBlock += ValueChange(offset = pointerDelta + op.offset, value = op.value)
                     }
 
                     is SetToConstant -> {
-                        currBlock += SetToConstant(offset = pointer, value = op.value)
+                        currBlock += SetToConstant(offset = pointerDelta + op.offset, value = op.value)
                     }
 
                     is PointerMove -> {
-                        pointer += op.value
+                        pointerDelta += op.value
                     }
 
                     else -> {
@@ -70,8 +67,8 @@ internal object OffsetAdder : OptimisationPass {
             }
 
             newBlock.addAll(currBlock)
-            if (pointer != 0) {
-                newBlock.add(PointerMove(pointer))
+            if (pointerDelta != 0) {
+                newBlock.add(PointerMove(pointerDelta))
             }
 
             // extremely specific case where there's a single PointerMove followed by an offsettable

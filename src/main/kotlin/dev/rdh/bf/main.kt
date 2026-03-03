@@ -160,7 +160,7 @@ private fun runProgram(
     })
 
     if (printTime) {
-        println("Execution time: ${formatTime(time)}")
+        System.err.println("Execution time: ${formatTime(time)}")
     }
 }
 

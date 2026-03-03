@@ -21,18 +21,20 @@ internal interface OptimisationPass {
 }
 
 @JvmName("optimise")
-fun bfOptimise(program: Iterable<BFOperation>): List<BFOperation> {
+fun bfOptimise(program: Iterable<BFOperation>, iterations: Int = 5): List<BFOperation> {
     val program = program.toMutableList()
 
     val passes = arrayOf(
         RunLengthMerger, ConstantReplacer, OffsetAdder, CopyLoopReplacer
     )
 
-    passes.forEach {
-        it.run(program)
-    }
+    repeat(iterations) {
+        passes.forEach {
+            it.run(program)
+        }
 
-    LoopOptimiser(*passes).run(program)
+        LoopOptimiser(*passes).run(program)
+    }
 
     return program
 }
@@ -40,9 +42,9 @@ fun bfOptimise(program: Iterable<BFOperation>): List<BFOperation> {
 /**
  * Removes unnecessary operations from a Brainfuck program.
  * This will:
- * - remove any [bf.PointerMove] or [bf.ValueChange] operations that have `value == 0`
+ * - remove any [dev.rdh.bf.PointerMove] or [dev.rdh.bf.ValueChange] operations that have `value == 0`
  * - remove any loops at the beginning of the program, which will never run
- * - remove any [bf.PointerMove], [bf.ValueChange] or [bf.SetToConstant] operations at the end of the program
+ * - remove any [dev.rdh.bf.PointerMove], [dev.rdh.bf.ValueChange] or [dev.rdh.bf.SetToConstant] operations at the end of the program
  * - removes the second and after of any set of consecutive loops
  */
 @JvmName("strip")
