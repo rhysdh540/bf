@@ -14,22 +14,17 @@ fun ClassVisitor.method(
     descriptor: String,
     signature: String? = null,
     exceptions: Array<String>? = null,
-    block: MethodVisitor.() -> Unit
-) {
-    val mv = method(access, name, descriptor, signature, exceptions)
-    mv.visitCode()
-    mv.block()
-    mv.visitMaxs(0, 0)
-    mv.visitEnd()
+    block: (MethodVisitor.() -> Unit)? = null
+): MethodVisitor {
+    val mv = visitMethod(access, name, descriptor, signature, exceptions)
+    if (block != null) {
+        mv.visitCode()
+        mv.block()
+        mv.visitMaxs(0, 0)
+        mv.visitEnd()
+    }
+    return mv
 }
-
-fun ClassVisitor.method(
-    access: Int = ACC_PUBLIC or ACC_STATIC,
-    name: String,
-    descriptor: String,
-    signature: String? = null,
-    exceptions: Array<String>? = null
-) = visitMethod(access, name, descriptor, signature, exceptions)
 
 fun MethodVisitor.int(value: Int) {
     when (value) {

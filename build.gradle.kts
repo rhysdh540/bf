@@ -3,13 +3,13 @@ import proguard.ProGuard
 import proguard.Configuration as ProguardConfiguration
 
 plugins {
-    kotlin("jvm") version "2.2.21"
-    id("com.gradleup.shadow") version("9.2.2")
+    kotlin("jvm") version "2.3.10"
+    id("com.gradleup.shadow") version("9.3.2")
 }
 
 buildscript {
     repositories.mavenCentral()
-    dependencies.classpath("com.guardsquare:proguard-base:7.8.1")
+    dependencies.classpath("com.guardsquare:proguard-base:7.8.2")
 }
 
 group = "dev.rdh"
