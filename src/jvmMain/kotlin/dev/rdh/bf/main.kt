@@ -156,7 +156,7 @@ private fun runProgram(
         val compiled = bfCompile(program, opts);
         { compiled(SysOutWriter, System.`in`.reader()) }
     } else {
-        { bfRun(program) }
+        { bfRun(program, stdout = SysOutOutput, stdin = System.`in`.reader().asBfInput()) }
     })
 
     if (printTime) {

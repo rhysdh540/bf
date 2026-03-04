@@ -4,31 +4,38 @@
 package dev.rdh.bf
 
 import java.io.FilterWriter
+import java.io.InputStream
+import java.io.OutputStream
+import java.io.Reader
+import java.io.Writer
 
-fun Int.wrappingAdd(value: Int, limit: Int): Int {
-    val result = (this + value) % limit
-    return if (result < 0) result + limit else result
-}
-
-/**
- * Flushes the output stream after every write to make output smoother
- */
 object SysOutWriter : FilterWriter(nullWriter()) {
     override fun write(c: Int) {
         print(c.toChar())
     }
 }
 
-operator fun <T> MutableList<T>.set(range: IntRange, newList: Iterable<T>) {
-    this.subList(range.first, range.last)
-        .clear()
-    this.addAll(range.first, newList.toList())
+object SysOutOutput : BfOutput {
+    override fun writeByte(value: Int) {
+        print(value.toChar())
+    }
 }
 
-class DefaultMap<K, V>(val initializer: DefaultMap<K, V>.(K) -> V, private val back: MutableMap<K, V>) : MutableMap<K, V> by back {
-    override fun get(key: K) = back.getOrPut(key) { initializer(key) }
+class ReaderInput(private val reader: Reader) : BfInput {
+    override fun readByte(): Int = reader.read()
 }
 
-fun <K, V> defaultMap(initializer: DefaultMap<K, V>.(K) -> V): DefaultMap<K, V> {
-    return DefaultMap(initializer, mutableMapOf())
+class WriterOutput(private val writer: Writer) : BfOutput {
+    override fun writeByte(value: Int) {
+        writer.write(value)
+    }
+
+    override fun flush() {
+        writer.flush()
+    }
 }
+
+fun Reader.asBfInput(): BfInput = ReaderInput(this)
+fun InputStream.asBfInput(): BfInput = reader().asBfInput()
+fun Writer.asBfOutput(): BfOutput = WriterOutput(this)
+fun OutputStream.asBfOutput(): BfOutput = writer().asBfOutput()

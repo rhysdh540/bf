@@ -4,6 +4,8 @@ import dev.rdh.bf.opt.bfOptimise
 import dev.rdh.bf.bfParse
 import dev.rdh.bf.bfRun
 import dev.rdh.bf.opt.bfStrip
+import dev.rdh.bf.asBfInput
+import dev.rdh.bf.asBfOutput
 import java.io.Reader.nullReader
 import java.io.StringWriter
 import java.io.Writer.nullWriter
@@ -40,7 +42,11 @@ fun main() {
 
     val interpretedTime = measureTime {
         repeat(runs) {
-            bfRun(program, stdin = nullReader(), stdout = nullWriter())
+            bfRun(
+                program,
+                stdin = nullReader().asBfInput(),
+                stdout = nullWriter().asBfOutput(),
+            )
         }
     }
 
@@ -79,6 +85,10 @@ private fun programBench(program: String): String {
     val parsed = bfParse(program)
     val optimised = bfOptimise(parsed)
     val output = StringWriter()
-    bfRun(optimised, stdout = output)
+    bfRun(
+        optimised,
+        stdout = output.asBfOutput(),
+        stdin = nullReader().asBfInput(),
+    )
     return output.toString()
 }

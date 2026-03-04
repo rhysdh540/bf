@@ -1,6 +1,3 @@
-@file:JvmName("Brainfuck")
-@file:JvmMultifileClass
-
 package dev.rdh.bf
 
 interface ProgramDsl {
@@ -17,7 +14,6 @@ interface ProgramDsl {
     fun loop(block: ProgramDsl.() -> Unit)
 }
 
-@JvmName("program")
 fun bfProgram(block: ProgramDsl.() -> Unit): List<BFOperation> {
     class Impl : ProgramDsl {
         val ops = mutableListOf<BFOperation>()

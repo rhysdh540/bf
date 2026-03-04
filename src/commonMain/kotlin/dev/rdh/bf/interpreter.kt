@@ -1,32 +1,18 @@
-@file:JvmName("Brainfuck")
-@file:JvmMultifileClass
-
 package dev.rdh.bf
 
-import java.io.InputStream
-import java.io.OutputStream
-import java.io.Reader
-import java.io.Writer
-
-@JvmName("run")
 @OptIn(ExperimentalUnsignedTypes::class)
 fun bfRun(program: Iterable<BFOperation>,
-          stdout: Writer = SysOutWriter,
-          stdin: Reader = System.`in`.reader(),
+          stdout: BfOutput,
+          stdin: BfInput,
 ) {
     runImpl(UByteArray(TAPE_SIZE), 0, program.toList(), stdout, stdin)
     stdout.flush()
 }
 
-@JvmName("run")
-fun bfRun(program: Iterable<BFOperation>, stdout: OutputStream, stdin: InputStream) {
-    bfRun(program, stdout.writer(), stdin.reader())
-}
-
 @OptIn(ExperimentalUnsignedTypes::class)
 private fun runImpl(tape: UByteArray, pointer: Int,
                     program: List<BFOperation>,
-                    stdout: Writer, stdin: Reader): Int {
+                    stdout: BfOutput, stdin: BfInput): Int {
     var pointer = pointer
     var insn = 0
 
@@ -39,11 +25,11 @@ private fun runImpl(tape: UByteArray, pointer: Int,
             }
             is Print -> {
                 val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)
-                stdout.write(tape[index].toInt())
+                stdout.writeByte(tape[index].toInt())
             }
             is Input -> {
                 val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)
-                tape[index] = stdin.read().toUByte()
+                tape[index] = stdin.readByte().toUByte()
             }
             is Loop -> {
                 while (tape[pointer].toInt() != 0) {
