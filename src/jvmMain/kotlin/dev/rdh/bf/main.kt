@@ -25,9 +25,9 @@ fun main(args: Array<String>) {
             |               Compile the following programs to java bytecode
             |       --interpreted, -i
             |               Run the following programs in interpreted mode (default)
-            |       --string, -s
-            |               Run the next argument as a string
-            |       --export, -e
+            |       --eval, -e
+            |               Evaluate the next argument directly as a string
+            |       --export, -E
             |               Export the following programs to a file in `.bf.out`
             |       --time, -t
             |               Time the following programs
