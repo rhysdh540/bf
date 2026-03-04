@@ -95,8 +95,6 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reade
     mw.int(TAPE_SIZE / 2)
     mw.store(pointer)
 
-    val copyValue = mw.local<Int>(4)
-
     fun MethodVisitor.addOffset(offset: Int) {
         if (offset == 0) return
         int(offset.absoluteValue)
@@ -139,7 +137,6 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reade
 
                 if (opts.debugInfo) {
                     parameters("in", "out", "tape", "pointer")
-                    localName(copyValue, "copyValue")
                 }
             }
             methodName
@@ -234,41 +231,23 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reade
             bastore
         }
         is Copy -> {
-            // currentValue = tape[pointer] & 0xFF
+            // tape[pointer + op.offset] = (byte) tape[pointer + op.offset] + (tape[pointer] * op.multiplier)
+            load(tape)
+            load(pointer)
+            addOffset(op.offset)
+            dup2
+            baload
             load(tape)
             load(pointer)
             baload
-            int(0xFF)
-            iand
-            store(copyValue)
 
-            // tape[pointer] = 0
-            load(tape)
-            load(pointer)
-            int(0)
-            bastore
-
-            for ((offset, multiplier) in op.multipliers) {
-                // tape[pointer + offset] += (byte) (currentValue * multiplier)
-                load(tape)
-                load(pointer)
-                addOffset(offset)
-
-                dup2
-                baload
-//                int(0xFF)
-//                iand
-
-                load(copyValue)
-                if (multiplier.absoluteValue != 1) {
-                    int(multiplier.absoluteValue)
-                    imul
-                }
-                if (multiplier >= 0) iadd else isub
-//                i2b
-
-                bastore
+            if (op.multiplier.absoluteValue != 1) {
+                int(op.multiplier.absoluteValue)
+                imul
             }
+            if (op.multiplier >= 0) iadd else isub
+
+            bastore
         }
     }
 
@@ -281,7 +260,6 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reade
         mw.locals(
             tape to "tape",
             pointer to "pointer",
-            copyValue to "copyValue",
         )
     }
 

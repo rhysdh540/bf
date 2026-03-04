@@ -4,6 +4,7 @@ import dev.rdh.bf.BFOperation
 import dev.rdh.bf.Copy
 import dev.rdh.bf.Loop
 import dev.rdh.bf.PointerMove
+import dev.rdh.bf.SetToConstant
 import dev.rdh.bf.ValueChange
 import dev.rdh.bf.defaultMap
 
@@ -19,22 +20,27 @@ import dev.rdh.bf.defaultMap
  * - 2 times to the cell at offset +1
  * - 1 time to the cell at offset +3
  *
- * This gets replaced with `Copy(mapOf(1 to 2, 3 to 1))`.
+ * This gets replaced with `Copy(2, 1), Copy(1, 3), SetToConstant()`.
  */
 internal object CopyLoopReplacer : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
-        for (i in program.indices) {
+        var i = 0
+        while (i < program.size) {
             val op = program[i]
             if (op is Loop) {
-                val copyOp = analyzeCopyLoop(op)
-                if (copyOp != null) {
-                    program[i] = copyOp
+                val replacement = analyzeCopyLoop(op)
+                if (replacement != null) {
+                    program.removeAt(i)
+                    program.addAll(i, replacement)
+                    i += replacement.size
+                    continue
                 }
             }
+            i++
         }
     }
 
-    private fun analyzeCopyLoop(loop: Loop): Copy? {
+    private fun analyzeCopyLoop(loop: Loop): List<BFOperation>? {
         if (loop.isEmpty()) return null
 
         var currentOffset = 0
@@ -57,14 +63,17 @@ internal object CopyLoopReplacer : OptimisationPass {
         val currentCellChange = offsetChanges.remove(0)
         if (currentCellChange != -1) return null
 
-        val multipliers = mutableMapOf<Int, Int>()
+        val replacements = mutableListOf<BFOperation>()
         for ((offset, change) in offsetChanges) {
-            multipliers[offset] = change
+            if (change != 0) {
+                replacements += Copy(multiplier = change, offset = offset)
+            }
         }
 
         // Must have at least one target to copy to
-        if (multipliers.isEmpty()) return null
+        if (replacements.isEmpty()) return null
 
-        return Copy(multipliers)
+        replacements += SetToConstant()
+        return replacements
     }
 }

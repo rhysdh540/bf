@@ -64,11 +64,9 @@ data class Loop(private val contents: List<BFOperation>) : BFOperation, List<BFO
 data class SetToConstant(val value: UByte = 0u, val offset: Int = 0) : BFOperation
 
 /**
- * Represents a command to copy the value at the current data pointer to other cells
- * while setting the current cell to zero.
- * This represents optimized loops like `[->++>>+<<<]` which copy the current value
- * to other positions with multipliers.
- * @param multipliers A map where keys are offsets from the current position,
- *                   and values are the multipliers for copying.
+ * Represents a command to add the current cell value multiplied by [multiplier]
+ * to the cell at [offset] from the current pointer.
+ *
+ * This operation does not modify the current cell.
  */
-data class Copy(val multipliers: Map<Int, Int>) : BFOperation
+data class Copy(val multiplier: Int, val offset: Int) : BFOperation

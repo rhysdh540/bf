@@ -70,7 +70,9 @@ class OptimiseTest {
     fun testCopyLoop() {
         val program = "[->++>>+<<<]"
         val expected = bfProgram {
-            copy(1 to 2, 3 to 1)
+            copy(2, 1)
+            copy(1, 3)
+            set(0u)
         }
 
         val optimised = bfOptimise(bfParse(program))

@@ -1,7 +1,6 @@
 package dev.rdh.bf.opt.strip
 
 import dev.rdh.bf.BFOperation
-import dev.rdh.bf.Copy
 import dev.rdh.bf.Loop
 import dev.rdh.bf.SetToConstant
 import dev.rdh.bf.opt.OptimisationPass
@@ -27,7 +26,6 @@ internal object ConsecutiveLoopRemover : OptimisationPass {
         get() {
             if (this is Loop) return true
             if (this is SetToConstant && this.value.toInt() == 0 && this.offset == 0) return true
-            if (this is Copy) return true
             return false
         }
 }

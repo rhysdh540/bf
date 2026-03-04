@@ -9,7 +9,7 @@ interface ProgramDsl {
     fun input(offset: Int = 0)
     fun set(constant: UByte, offset: Int = 0)
     fun setToZero(offset: Int = 0) = set(0u, offset)
-    fun copy(firstMultiplier: Pair<Int, Int>, vararg otherMultipliers: Pair<Int, Int>)
+    fun copy(multiplier: Int, offset: Int)
 
     fun loop(block: ProgramDsl.() -> Unit)
 }
@@ -29,17 +29,12 @@ fun bfProgram(block: ProgramDsl.() -> Unit): List<BFOperation> {
         override fun print(offset: Int) = ops.add(Print(offset)).unit
         override fun input(offset: Int) = ops.add(Input(offset)).unit
         override fun set(constant: UByte, offset: Int) = ops.add(SetToConstant(constant, offset)).unit
-        override fun copy(firstMultiplier: Pair<Int, Int>, otherMultipliers: Array<out Pair<Int, Int>>) {
-            val m = otherMultipliers.toMap() + firstMultiplier
-            if (m.containsKey(0)) {
+
+        override fun copy(multiplier: Int, offset: Int) {
+            if (offset == 0) {
                 throw IllegalArgumentException("Cannot copy to the current cell (offset 0)")
             }
-
-            if (m.isEmpty()) {
-                throw IllegalArgumentException("At least one target cell must be specified")
-            }
-
-            ops.add(Copy(m))
+            ops.add(Copy(multiplier = multiplier, offset = offset))
         }
 
         override fun loop(block: ProgramDsl.() -> Unit) = ops.add(Loop(bfProgram(block))).unit

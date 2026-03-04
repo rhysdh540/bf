@@ -91,6 +91,24 @@ class BfOutputWriter(internal val output: BfOutput) : Writer() {
     }
 }
 
+class PrintStreamWriter(internal val stream: PrintStream) : Writer() {
+    override fun write(c: Int) {
+        stream.write(c)
+    }
+
+    override fun write(cbuf: CharArray, off: Int, len: Int) {
+        stream.write(String(cbuf).toByteArray(), off, len)
+    }
+
+    override fun flush() {
+        stream.flush()
+    }
+
+    override fun close() {
+        stream.close()
+    }
+}
+
 fun Reader.bfInput(): BfInput = when (this) {
     is BfInputReader -> this.input
     else -> ReaderInput(this)
@@ -107,7 +125,7 @@ fun BfInput.reader() = when (this) {
 }
 fun BfOutput.writer() = when (this) {
     is WriterOutput -> this.writer
-    is PrintStreamOutput -> this.stream.writer()
+    is PrintStreamOutput -> PrintStreamWriter(this.stream)
     is OutputStreamOutput -> this.stream.writer()
     else -> BfOutputWriter(this)
 }
