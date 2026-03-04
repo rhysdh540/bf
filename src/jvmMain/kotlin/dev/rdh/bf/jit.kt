@@ -1,6 +1,3 @@
-@file:JvmName("Brainfuck")
-@file:JvmMultifileClass
-
 package dev.rdh.bf
 
 import org.objectweb.asm.*

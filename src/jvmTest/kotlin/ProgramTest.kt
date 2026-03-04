@@ -1,13 +1,13 @@
+import dev.rdh.bf.NullInput
+import dev.rdh.bf.NullOutput
+import dev.rdh.bf.StringOutput
 import dev.rdh.bf.SystemRunnerOptions
 import dev.rdh.bf.bfCompile
 import dev.rdh.bf.opt.bfOptimise
 import dev.rdh.bf.bfParse
 import dev.rdh.bf.bfRun
 import dev.rdh.bf.opt.bfStrip
-import dev.rdh.bf.asBfInput
-import dev.rdh.bf.asBfOutput
 import java.io.Reader.nullReader
-import java.io.StringWriter
 import java.io.Writer.nullWriter
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -44,8 +44,8 @@ fun main() {
         repeat(runs) {
             bfRun(
                 program,
-                stdin = nullReader().asBfInput(),
-                stdout = nullWriter().asBfOutput(),
+                stdin = NullInput,
+                stdout = NullOutput,
             )
         }
     }
@@ -84,11 +84,11 @@ private fun getResource(name: String): String {
 private fun programBench(program: String): String {
     val parsed = bfParse(program)
     val optimised = bfOptimise(parsed)
-    val output = StringWriter()
+    val output = StringOutput()
     bfRun(
         optimised,
-        stdout = output.asBfOutput(),
-        stdin = nullReader().asBfInput(),
+        stdout = output,
+        stdin = NullInput,
     )
     return output.toString()
 }
