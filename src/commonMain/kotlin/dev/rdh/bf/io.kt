@@ -8,7 +8,7 @@ interface BfOutput {
     fun writeByte(value: Int)
     fun flush() {}
 
-    fun print(v: Any?) {
+    fun write(v: Any?) {
         for (c in v.toString()) {
             writeByte(c.code)
         }

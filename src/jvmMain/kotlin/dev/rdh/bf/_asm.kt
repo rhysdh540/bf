@@ -107,6 +107,10 @@ inline fun <reified T> MethodVisitor.getstatic(name: String, descriptor: String)
     getstatic(type<T>(), name, descriptor)
 }
 
+inline fun <reified T, reified R> MethodVisitor.getstatic(name: String) {
+    getstatic<T>(name, type<R>().descriptor)
+}
+
 inline fun MethodVisitor.putstatic(owner: String, name: String, descriptor: String) {
     visitFieldInsn(PUTSTATIC, owner, name, descriptor)
 }
@@ -117,6 +121,10 @@ inline fun MethodVisitor.putstatic(owner: Type, name: String, descriptor: String
 
 inline fun <reified T> MethodVisitor.putstatic(name: String, descriptor: String) {
     putstatic(type<T>(), name, descriptor)
+}
+
+inline fun <reified T, reified R> MethodVisitor.putstatic(name: String) {
+    putstatic<T>(name, type<R>().descriptor)
 }
 
 inline fun MethodVisitor.getfield(owner: String, name: String, descriptor: String) {
@@ -131,6 +139,10 @@ inline fun <reified T> MethodVisitor.getfield(name: String, descriptor: String) 
     getfield(type<T>(), name, descriptor)
 }
 
+inline fun <reified T, reified R> MethodVisitor.getfield(name: String) {
+    getfield<T>(name, type<R>().descriptor)
+}
+
 inline fun MethodVisitor.putfield(owner: String, name: String, descriptor: String) {
     visitFieldInsn(PUTFIELD, owner, name, descriptor)
 }
@@ -141,6 +153,10 @@ inline fun MethodVisitor.putfield(owner: Type, name: String, descriptor: String)
 
 inline fun <reified T> MethodVisitor.putfield(name: String, descriptor: String) {
     putfield(type<T>(), name, descriptor)
+}
+
+inline fun <reified T, reified R> MethodVisitor.putfield(name: String) {
+    putfield<T>(name, type<R>().descriptor)
 }
 // endregion
 

@@ -10,10 +10,12 @@ import org.objectweb.asm.commons.CodeSizeEvaluator
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.analysis.AnalyzerException
 import org.objectweb.asm.util.CheckClassAdapter
+import java.io.BufferedWriter
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStream
 import java.io.OutputStreamWriter
+import java.io.PrintStream
 import java.io.PrintWriter
 import java.io.Reader
 import java.io.Writer
@@ -35,20 +37,20 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Write
 
     if (opts.executable) {
         cw.method(ACC_PUBLIC or ACC_STATIC, "main", desc<Void>(type<Array<String>>())) {
-            val out = local<OutputStreamWriter>(1)
+            val out = local<Writer>(1)
 
             // new OutputStreamWriter(System.out)
             new<OutputStreamWriter>()
             dup
             dup
-            getstatic<System>("out", "Ljava/io/OutputStream;")
+            getstatic<System, PrintStream>("out")
             invokespecial<OutputStreamWriter>("<init>", desc<Void>(type<OutputStream>()))
             store(out)
 
             // new InputStreamReader(System.in)
             new<InputStreamReader>()
             dup
-            getstatic<System>("in", "Ljava/io/InputStream;")
+            getstatic<System, InputStream>("in")
             invokespecial<InputStreamReader>("<init>", desc<Void>(type<InputStream>()))
 
             invokestatic(className, "run", desc<Void>(type<Writer>(), type<Reader>()))
