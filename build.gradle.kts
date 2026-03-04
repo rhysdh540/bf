@@ -160,7 +160,11 @@ for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
                 file.absolutePath
             )
 
-            jvmArgs("-server", "-Xmx3g", "-XX:+UseZGC", "-XX:-DontCompileHugeMethods", "-XX:+UseCompactObjectHeaders")
+            jvmArgs(
+                "-server", "-Xmx3g", "-XX:+UseZGC",
+                "-XX:-DontCompileHugeMethods", "-XX:+UseCompactObjectHeaders",
+                "-Xlog:verification=error",
+            )
 
             val input = file.resolveSibling("${name}.in")
             if (input.exists()) {

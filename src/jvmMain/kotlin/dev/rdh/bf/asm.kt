@@ -7,6 +7,7 @@ import org.objectweb.asm.Label
 import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.Opcodes.*
 import org.objectweb.asm.Type
+import java.lang.invoke.MethodType
 
 fun ClassVisitor.method(
     access: Int = ACC_PUBLIC or ACC_STATIC,
@@ -92,3 +93,12 @@ inline fun <reified T> type(): Type {
 }
 inline fun <reified T> desc(vararg args: Type): String =
     Type.getMethodDescriptor(type<T>(), *args)
+
+inline fun <reified R> mtype(vararg args: Type): Type =
+    Type.getMethodType(type<R>(), *args)
+
+val Type.methodType: MethodType
+    get() {
+        if (this.sort != Type.METHOD) throw IllegalStateException("Not a method type: $this")
+        return MethodType.fromMethodDescriptorString(descriptor, null)
+    }

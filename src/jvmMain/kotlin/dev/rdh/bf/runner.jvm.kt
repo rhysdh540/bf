@@ -7,7 +7,7 @@ private class JvmJitRunner(
         val compiled = bfCompile(program, options)
 
         return BfExecutable { i, o ->
-            compiled(o.asWriter(), i.asReader())
+            compiled(i.asReader(), o.asWriter())
             o.flush()
         }
     }

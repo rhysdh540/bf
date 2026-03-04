@@ -20,7 +20,6 @@ import java.io.Reader
 import java.io.Writer
 import java.lang.invoke.MethodHandle
 import java.lang.invoke.MethodHandles
-import java.lang.invoke.MethodType
 import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
@@ -29,37 +28,31 @@ import kotlin.random.Random
 
 @JvmName("compile")
 @OptIn(ExperimentalStdlibApi::class)
-fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Writer, Reader) -> Unit {
+fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reader, Writer) -> Unit {
     val className = "BFProgram$${Random.nextInt().toHexString()}"
     val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
     cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
 
     if (opts.executable) {
         cw.method(ACC_PUBLIC or ACC_STATIC, "main", desc<Void>(type<Array<String>>())) {
-            val out = local<Writer>(1)
-
-            // new OutputStreamWriter(System.out)
-            new<OutputStreamWriter>()
-            dup
-            dup
-            getstatic<System, PrintStream>("out")
-            invokespecial<OutputStreamWriter>("<init>", desc<Void>(type<OutputStream>()))
-            store(out)
-
             // new InputStreamReader(System.in)
             new<InputStreamReader>()
             dup
             getstatic<System, InputStream>("in")
             invokespecial<InputStreamReader>("<init>", desc<Void>(type<InputStream>()))
 
-            invokestatic(className, "run", desc<Void>(type<Writer>(), type<Reader>()))
-            load(out)
+            // new OutputStreamWriter(System.out)
+            new<OutputStreamWriter>()
+            dup
+            getstatic<System, PrintStream>("out")
+            invokespecial<OutputStreamWriter>("<init>", desc<Void>(type<OutputStream>()))
+            dup_x1
+            invokestatic(className, "run", desc<Void>(type<Reader>(), type<Writer>()))
             invokevirtual<OutputStreamWriter>("flush", desc<Void>())
             areturn<Void>()
 
             if (opts.debugInfo) {
                 parameter("args")
-                localName(out, "out")
             }
         }
     }
@@ -89,11 +82,11 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Write
         }
     }
 
-    val mw = cw.method(name = "run", descriptor = desc<Void>(type<Writer>(), type<Reader>()))
+    val mw = cw.method(name = "run", descriptor = desc<Void>(type<Reader>(), type<Writer>()))
     mw.visitCode()
 
-    val output = mw.local<Writer>(0)
-    val input = mw.local<Reader>(1)
+    val input = mw.local<Reader>(0)
+    val output = mw.local<Writer>(1)
 
     val tape = mw.local<ByteArray>(2)
     mw.int(TAPE_SIZE)
@@ -132,7 +125,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Write
     // bf code has a lot of repeated loops, so we can reuse the same method
     val loopCache = mutableMapOf<Loop, String>()
     var loopI = 1
-    val loopMethodDescriptor = desc<Int>(type<Writer>(), type<Reader>(), type<ByteArray>(), type<Int>())
+    val loopMethodDescriptor = desc<Int>(type<Reader>(), type<Writer>(), type<ByteArray>(), type<Int>())
 
     // loop bodies go in separate functions, because the jvm can't handle large methods well
     fun makeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit): String {
@@ -148,7 +141,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Write
                 areturn<Int>()
 
                 if (opts.debugInfo) {
-                    parameters("out", "in", "tape", "pointer")
+                    parameters("in", "out", "tape", "pointer")
                     localName(copyValue, "copyValue")
                 }
             }
@@ -219,8 +212,8 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Write
                 val methodName = makeLoopBody(op) { writeOp(it) }
 
                 // call the loop body
-                load(output)
                 load(input)
+                load(output)
                 load(tape)
                 load(pointer)
                 invokestatic(className, methodName, loopMethodDescriptor)
@@ -287,7 +280,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Write
     }
 
     if (opts.debugInfo) {
-        mw.parameters("out", "in")
+        mw.parameters("in", "out")
         mw.locals(
             tape to "tape",
             pointer to "pointer",
@@ -311,7 +304,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Write
 
     val cl = loadClass(bytes)
     val lookup = MethodHandles.lookup()
-    val method = lookup.findStatic(cl, "run", MethodType.methodType(Void.TYPE, Writer::class.java, Reader::class.java))
+    val method = lookup.findStatic(cl, "run", mtype<Void>(type<Reader>(), type<Writer>()).methodType)
     return convertHandle(method)
 }
 
@@ -326,12 +319,12 @@ private fun loadClass(bytes: ByteArray): Class<*> {
     return cl.loadClass(name)
 }
 
-private fun convertHandle(handle: MethodHandle): (Writer, Reader) -> Unit {
+private fun convertHandle(handle: MethodHandle): (Reader, Writer) -> Unit {
     assert(handle.type().returnType() == Void.TYPE)
     assert(handle.type().parameterCount() == 2)
-    assert(handle.type().parameterType(0) == Writer::class.java)
-    assert(handle.type().parameterType(1) == Reader::class.java)
-    return { writer, reader -> handle.invoke(writer, reader) }
+    assert(handle.type().parameterType(0) == Reader::class.java)
+    assert(handle.type().parameterType(1) == Writer::class.java)
+    return { reader, writer -> handle.invoke(reader, writer) }
 }
 
 private fun warnCodeSize(clazz: ByteArray) {

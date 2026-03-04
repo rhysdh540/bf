@@ -56,7 +56,7 @@ fun main() {
 
     val jitTime = measureTime {
         repeat(runs) {
-            compiled(nullWriter(), nullReader())
+            compiled(nullReader(), nullWriter())
         }
     }
 
