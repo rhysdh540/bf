@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title>bf</title>
+    <style>textarea { width: 100%; }</style>
+</head>
+<body>
+<textarea id="code" rows="10">++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.</textarea>
+<br/>
+<button id="run">Run</button>
+<label><input id="optimise" type="checkbox" checked/> Optimise</label>
+<label><input id="strip" type="checkbox" checked/> Strip</label>
+<br/>
+<textarea id="output" rows="40" readonly style="width: 100%"></textarea>
+<small id="time"></small>
+<script type="module">
+    const codeEl = document.getElementById('code');
+    const optimiseEl = document.getElementById('optimise');
+    const stripEl = document.getElementById('strip');
+    const outputEl = document.getElementById('output');
+    const runBtn = document.getElementById('run');
+    const timeEl = document.getElementById('time');
+
+    const workerSource = `
+        self.onmessage = async (event) => {
+            const { instantiateUrl, code, optimise, strip } = event.data;
+
+            try {
+                const { instantiate } = await import(instantiateUrl);
+                const { exports } = await instantiate({
+                    bf: {
+                        read_byte: () => -1,
+                        write_byte: (v) => self.postMessage({ type: "out", byte: v & 0xff }),
+                        flush: () => self.postMessage({ type: "flush" })
+                    }
+                });
+
+                exports.run(code, !!optimise, !!strip);
+                self.postMessage({ type: "done" });
+            } catch (err) {
+                self.postMessage({
+                    type: "error",
+                    message: err && err.message ? err.message : String(err)
+                });
+            }
+        };
+    `;
+
+    const workerUrl = URL.createObjectURL(
+        new Blob([workerSource], { type: "text/javascript" })
+    );
+
+    let worker = null;
+
+    function stopWorker() {
+        if (worker) {
+            worker.terminate();
+            worker = null;
+        }
+    }
+
+    let startTime = 0;
+    runBtn.addEventListener('click', () => {
+        stopWorker();
+
+        outputEl.value = "";
+        runBtn.disabled = true;
+
+        worker = new Worker(workerUrl, { type: "module" });
+        worker.onmessage = (event) => {
+            const msg = event.data;
+            if (msg.type === "out") {
+                outputEl.value += String.fromCharCode(msg.byte);
+                outputEl.scrollTop = outputEl.scrollHeight;
+                return;
+            }
+
+            if (msg.type === "done") {
+                runBtn.disabled = false;
+                stopWorker();
+                const endTime = performance.now();
+                timeEl.textContent = `Execution time: ${(endTime - startTime).toFixed(2)} ms`;
+                return;
+            }
+
+            if (msg.type === "error") {
+                outputEl.value += "\\n[worker error] " + msg.message + "\\n";
+                runBtn.disabled = false;
+                stopWorker();
+            }
+        };
+
+        startTime = performance.now();
+        worker.postMessage({
+            instantiateUrl: new URL("./bf.uninstantiated.mjs", import.meta.url).href,
+            code: codeEl.value,
+            optimise: optimiseEl.checked,
+            strip: stripEl.checked
+        });
+    });
+
+    window.addEventListener("beforeunload", () => {
+        stopWorker();
+        URL.revokeObjectURL(workerUrl);
+    });
+</script>
+</body>
+</html>

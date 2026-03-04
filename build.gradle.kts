@@ -1,4 +1,5 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import proguard.ConfigurationParser
 import proguard.ProGuard
 import proguard.Configuration as ProguardConfiguration
@@ -23,6 +24,12 @@ repositories {
 kotlin {
     jvmToolchain(25)
     jvm()
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser()
+        nodejs()
+        binaries.executable()
+    }
 
     sourceSets {
         val jvmMain by getting {
@@ -111,6 +118,31 @@ tasks.assemble {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+val wasmDemoDir = layout.buildDirectory.dir("wasm-demo")
+
+tasks.register<Sync>("prepareWasmDemo") {
+    group = "wasm"
+    description = "Prepare a static folder with wasm demo assets."
+
+    dependsOn("wasmJsProductionExecutableCompileSync")
+
+    from("src/wasmJsMain/resources")
+    from(layout.buildDirectory.dir("wasm/packages/bf/kotlin")) {
+        include("*.mjs", "*.wasm", "*.wasm.map", "custom-formatters.js")
+    }
+
+    into(wasmDemoDir)
+}
+
+tasks.register<Exec>("serveWasmDemo") {
+    group = "wasm"
+    description = "Serve the wasm demo at http://localhost:8080 via http-server."
+
+    dependsOn("prepareWasmDemo")
+    workingDir = wasmDemoDir.get().asFile
+    commandLine("npx", "--yes", "http-server", ".", "-p", "8080", "-c-1")
 }
 
 for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
