@@ -48,9 +48,10 @@ inline fun <reified T> MethodVisitor.local(index: Int): LocalVar {
 
 inline fun <reified T> MethodVisitor.localName(
     index: Int, name: String,
+    signature: String? = null,
     startLabel: Label = Label(), endLabel: Label = Label()
 ) {
-    visitLocalVariable(name, type<T>().descriptor, null, startLabel, endLabel, index)
+    visitLocalVariable(name, type<T>().descriptor, signature, startLabel, endLabel, index)
 }
 
 inline fun MethodVisitor.localName(

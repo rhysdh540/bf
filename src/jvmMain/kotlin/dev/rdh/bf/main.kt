@@ -4,10 +4,13 @@ package dev.rdh.bf
 
 import dev.rdh.bf.opt.bfOptimise
 import dev.rdh.bf.opt.bfStrip
+import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.Path
+import kotlin.io.path.deleteRecursively
 import kotlin.io.path.readText
 import kotlin.time.measureTime
 
+@OptIn(ExperimentalPathApi::class)
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         println("""
@@ -36,6 +39,8 @@ fun main(args: Array<String>) {
         """.trimMargin())
         return
     }
+
+    Path(".bf.out").deleteRecursively()
 
     var compiled = false
     var nextIsString = false

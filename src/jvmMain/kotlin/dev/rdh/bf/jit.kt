@@ -10,7 +10,6 @@ import org.objectweb.asm.commons.CodeSizeEvaluator
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.analysis.AnalyzerException
 import org.objectweb.asm.util.CheckClassAdapter
-import java.io.BufferedWriter
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStream
@@ -359,9 +358,4 @@ private fun verifyClass(clazz: ByteArray) {
     } catch (_: AnalyzerException) {
         CheckClassAdapter.verify(ClassReader(clazz), true, PrintWriter(System.err))
     }
-}
-
-@Suppress("unused")
-private val clinit = run {
-    Path(".bf.out").toFile().deleteRecursively()
 }
