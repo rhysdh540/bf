@@ -2,17 +2,17 @@ package dev.rdh.bf
 
 @OptIn(ExperimentalUnsignedTypes::class)
 fun bfRun(program: Iterable<BFOperation>,
-          stdout: BfOutput,
           stdin: BfInput,
+          stdout: BfOutput,
 ) {
-    runImpl(UByteArray(TAPE_SIZE), 0, program.toList(), stdout, stdin)
+    runImpl(UByteArray(TAPE_SIZE), 0, program.toList(), stdin, stdout)
     stdout.flush()
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
 private fun runImpl(tape: UByteArray, pointer: Int,
                     program: List<BFOperation>,
-                    stdout: BfOutput, stdin: BfInput): Int {
+                    stdin: BfInput, stdout: BfOutput): Int {
     var pointer = pointer
     var insn = 0
 
@@ -33,7 +33,7 @@ private fun runImpl(tape: UByteArray, pointer: Int,
             }
             is Loop -> {
                 while (tape[pointer].toInt() != 0) {
-                    pointer = runImpl(tape, pointer, op, stdout, stdin)
+                    pointer = runImpl(tape, pointer, op, stdin, stdout)
                 }
             }
             is SetToConstant -> {

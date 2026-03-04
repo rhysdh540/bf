@@ -1,4 +1,4 @@
-import dev.rdh.bf.CompileOptions
+import dev.rdh.bf.SystemRunnerOptions
 import dev.rdh.bf.bfCompile
 import dev.rdh.bf.opt.bfOptimise
 import dev.rdh.bf.bfParse
@@ -34,7 +34,7 @@ class ProgramTest {
 }
 
 fun main() {
-    val program =bfParse(getResource("mandelbrot.b"))
+    val program = bfParse(getResource("mandelbrot.b"))
         .let { bfOptimise(it) }
         .let { bfStrip(it) }
 
@@ -52,7 +52,7 @@ fun main() {
 
     println("Interpreted time: ${formatTime(interpretedTime.div(runs))}")
 
-    val compiled = bfCompile(program, CompileOptions(export = true))
+    val compiled = bfCompile(program, SystemRunnerOptions(export = true))
 
     val jitTime = measureTime {
         repeat(runs) {

@@ -7,4 +7,10 @@ interface BfInput {
 interface BfOutput {
     fun writeByte(value: Int)
     fun flush() {}
+
+    fun print(v: Any?) {
+        for (c in v.toString()) {
+            writeByte(c.code)
+        }
+    }
 }

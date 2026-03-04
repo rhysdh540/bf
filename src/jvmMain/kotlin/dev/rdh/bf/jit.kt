@@ -26,33 +26,14 @@ import kotlin.io.path.writeBytes
 import kotlin.math.absoluteValue
 import kotlin.random.Random
 
-/**
- * Options for customizing the jit
- * @param tapeSize the size of the tape to use. Powers of two are recommended for performance.
- * @param overflowProtection whether to wrap tape accesses. Slows down the program significantly, but can prevent crashes.
- *
- * @param export whether to export the class to a file in the current directory
- * @param localVariables whether to generate local variable names in the class
- * @param mainMethod whether to generate a main method in the class,
- *                   which when run will run the program with `System.in` and `System.out`
- */
-data class CompileOptions(
-    val tapeSize: Int = TAPE_SIZE,
-    val overflowProtection: Boolean = true,
-
-    val export: Boolean = false,
-    val localVariables: Boolean = export,
-    val mainMethod: Boolean = export,
-)
-
 @JvmName("compile")
 @OptIn(ExperimentalStdlibApi::class)
-fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOptions()): (Writer, Reader) -> Unit {
+fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Writer, Reader) -> Unit {
     val className = "BFProgram$${Random.nextInt().toHexString()}"
     val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
     cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
 
-    if (opts.mainMethod) {
+    if (opts.executable) {
         cw.method(ACC_PUBLIC or ACC_STATIC, "main", desc<Void>(type<Array<String>>())) {
             val out = local<OutputStreamWriter>(1)
 
@@ -75,14 +56,14 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             invokevirtual<OutputStreamWriter>("flush", desc<Void>())
             areturn<Void>()
 
-            if (opts.localVariables) {
+            if (opts.debugInfo) {
                 parameter("args")
                 localName(out, "out")
             }
         }
     }
 
-    val tapeSizeIsPowerOf2 = opts.tapeSize and (opts.tapeSize - 1) == 0
+    val tapeSizeIsPowerOf2 = TAPE_SIZE and (TAPE_SIZE - 1) == 0
 
     // method to wrap negative indices
     if (opts.overflowProtection && !tapeSizeIsPowerOf2) {
@@ -101,7 +82,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
             iadd
             areturn<Int>()
 
-            if (opts.localVariables) {
+            if (opts.debugInfo) {
                 parameters("num", "length")
             }
         }
@@ -114,13 +95,13 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
     val input = mw.local<Reader>(1)
 
     val tape = mw.local<ByteArray>(2)
-    mw.int(opts.tapeSize)
+    mw.int(TAPE_SIZE)
     mw.newarray<Byte>()
     mw.store(tape)
 
     // initialize pointer: int
     val pointer = mw.local<Int>(3)
-    mw.int(opts.tapeSize / 2)
+    mw.int(TAPE_SIZE / 2)
     mw.store(pointer)
 
     val copyValue = mw.local<Int>(4)
@@ -132,10 +113,10 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
 
         if (opts.overflowProtection) {
             if (tapeSizeIsPowerOf2) {
-                int(opts.tapeSize - 1)
+                int(TAPE_SIZE - 1)
                 iand
             } else {
-                int(opts.tapeSize)
+                int(TAPE_SIZE)
                 irem
 
                 if (offset < 0) {
@@ -165,7 +146,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
                 load(pointer)
                 areturn<Int>()
 
-                if (opts.localVariables) {
+                if (opts.debugInfo) {
                     parameters("out", "in", "tape", "pointer")
                     localName(copyValue, "copyValue")
                 }
@@ -304,7 +285,7 @@ fun bfCompile(program: Iterable<BFOperation>, opts: CompileOptions = CompileOpti
         mw.writeOp(op)
     }
 
-    if (opts.localVariables) {
+    if (opts.debugInfo) {
         mw.parameters("out", "in")
         mw.locals(
             tape to "tape",

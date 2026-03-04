@@ -21,7 +21,7 @@ repositories {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
     jvm()
 
     sourceSets {
@@ -128,7 +128,7 @@ for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
                 file.absolutePath
             )
 
-            jvmArgs("-server", "-Xmx3g", "-XX:+UseZGC", "-XX:-DontCompileHugeMethods")
+            jvmArgs("-server", "-Xmx3g", "-XX:+UseZGC", "-XX:-DontCompileHugeMethods", "-XX:+UseCompactObjectHeaders")
 
             val input = file.resolveSibling("${name}.in")
             if (input.exists()) {
@@ -138,9 +138,9 @@ for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
             }
 
             classpath = sourceSets["jvmMain"].runtimeClasspath
-            mainClass.set("dev.rdh.bf.Main")
+            mainClass = "dev.rdh.bf.Main"
             javaLauncher = javaToolchains.launcherFor {
-                languageVersion.set(JavaLanguageVersion.of(21))
+                languageVersion = JavaLanguageVersion.of(25)
             }
         }
     }

@@ -45,10 +45,9 @@ fun main(args: Array<String>) {
     var export = false
     var time = false
 
-    fun makeCompileOptions(): CompileOptions? {
+    fun makeCompileOptions(): SystemRunnerOptions? {
         return if (compiled) {
-            CompileOptions(
-                localVariables = export,
+            SystemRunnerOptions(
                 export = export,
                 overflowProtection = overflowProtection,
             )
@@ -144,7 +143,7 @@ private fun runProgram(
     optimise: Boolean,
     strip: Boolean,
     printTime: Boolean,
-    opts: CompileOptions?
+    systemRunnerOpts: SystemRunnerOptions?
 ) {
     var program = bfParse(literal)
     if (optimise)
@@ -152,12 +151,14 @@ private fun runProgram(
     if (strip)
         program = bfStrip(program)
 
-    val time = measureTime(if (opts != null) {
-        val compiled = bfCompile(program, opts);
-        { compiled(SysOutWriter, System.`in`.reader()) }
+    val runner = if (systemRunnerOpts != null) {
+        systemRunner(systemRunnerOpts)
     } else {
-        { bfRun(program, stdout = SysOutOutput, stdin = System.`in`.reader().asBfInput()) }
-    })
+        InterpreterRunner
+    }
+    val executable = runner.compile(program)
+
+    val time = measureTime { executable.run(SysInInput, SysOutOutput) }
 
     if (printTime) {
         System.err.println("Execution time: ${formatTime(time)}")
