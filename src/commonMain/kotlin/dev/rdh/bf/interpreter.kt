@@ -14,10 +14,9 @@ private fun runImpl(tape: UByteArray, pointer: Int,
                     program: List<BFOperation>,
                     stdin: BfInput, stdout: BfOutput): Int {
     var pointer = pointer
-    var insn = 0
 
-    while (insn < program.size) {
-        when (val op = program[insn]) {
+    for (op in program) {
+        when (op) {
             is PointerMove -> pointer = pointer.wrappingAdd(op.value, TAPE_SIZE)
             is ValueChange -> {
                 val index = pointer.wrappingAdd(op.offset, TAPE_SIZE)
@@ -45,7 +44,6 @@ private fun runImpl(tape: UByteArray, pointer: Int,
                 tape[dest] = (tape[dest].toInt() + tape[pointer].toInt() * op.multiplier).toUByte()
             }
         }
-        insn++
     }
 
     return pointer

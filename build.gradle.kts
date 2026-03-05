@@ -142,7 +142,7 @@ tasks.register<Exec>("serveWasmDemo") {
 
     dependsOn("prepareWasmDemo")
     workingDir = wasmDemoDir.get().asFile
-    commandLine("npx", "--yes", "http-server", ".", "-p", "8080", "-c-1")
+    commandLine("/usr/bin/env", "http-server", ".", "-p", "8080", "-c-1")
 }
 
 for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
