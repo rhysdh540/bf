@@ -32,6 +32,12 @@ kotlin {
     }
 
     sourceSets {
+        val wasmJsMain by getting {
+            dependencies {
+                implementation(npm("binaryen", "116.0.0"))
+            }
+        }
+
         val jvmMain by getting {
             dependencies {
                 implementation("org.ow2.asm:asm-util:9.9")
@@ -121,29 +127,6 @@ tasks.withType<Test> {
 }
 
 val wasmDemoDir = layout.buildDirectory.dir("wasm-demo")
-
-tasks.register<Sync>("prepareWasmDemo") {
-    group = "wasm"
-    description = "Prepare a static folder with wasm demo assets."
-
-    dependsOn("wasmJsProductionExecutableCompileSync")
-
-    from("src/wasmJsMain/resources")
-    from(layout.buildDirectory.dir("wasm/packages/bf/kotlin")) {
-        include("*.mjs", "*.wasm", "*.wasm.map", "custom-formatters.js")
-    }
-
-    into(wasmDemoDir)
-}
-
-tasks.register<Exec>("serveWasmDemo") {
-    group = "wasm"
-    description = "Serve the wasm demo at http://localhost:8080 via http-server."
-
-    dependsOn("prepareWasmDemo")
-    workingDir = wasmDemoDir.get().asFile
-    commandLine("/usr/bin/env", "http-server", ".", "-p", "8080", "-c-1")
-}
 
 for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
     if (file.isFile && file.extension == "b") {
