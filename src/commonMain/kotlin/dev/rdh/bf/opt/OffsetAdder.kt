@@ -8,6 +8,14 @@ import dev.rdh.bf.SetToConstant
 import dev.rdh.bf.ValueChange
 import dev.rdh.bf.set
 
+/**
+ * Converts sequences of offsettable operations into a single operation with an offset.
+ *
+ * For example, the sequence `>+++++<` would be converted from
+ * [PointerMove(1), ValueChange(5, 0)]
+ * to
+ * [ValueChange(5, 1)]
+ */
 internal object OffsetAdder : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
         var i = 0

@@ -32,7 +32,6 @@ class OptimiseTest {
     fun testZero() {
         val program = "+++[-]."
         val expected = bfProgram {
-            increment(3)
             setToZero()
             print()
         }
@@ -47,7 +46,6 @@ class OptimiseTest {
     fun testNonZero() {
         val program = "++++[-]+++[.-]"
         val expected = bfProgram {
-            increment(4)
             set(3u)
             loop {
                 print()
@@ -85,6 +83,18 @@ class OptimiseTest {
         val expected = bfProgram {
             moveRight(5)
             decrement()
+        }
+
+        val optimised = bfOptimise(bfParse(program))
+        assertEquals(expected, optimised)
+    }
+
+    @Test
+    fun testSetThenAddThenSet() {
+        val program = "[-]++++[-]."
+        val expected = bfProgram {
+            setToZero()
+            print()
         }
 
         val optimised = bfOptimise(bfParse(program))

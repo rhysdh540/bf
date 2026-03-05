@@ -14,14 +14,18 @@ internal object RunLengthMerger : OptimisationPass {
             val current = program[i]
             val next = program[i + 1]
 
-            if (current is PointerMove && next is PointerMove) {
-                program[i] = PointerMove(current.value + next.value)
-                program.removeAt(i + 1)
-            } else if (current is ValueChange && next is ValueChange && current.offset == next.offset) {
-                program[i] = ValueChange(current.value + next.value, current.offset)
-                program.removeAt(i + 1)
-            } else {
-                i++
+            when (current) {
+                is PointerMove if next is PointerMove -> {
+                    program[i] = PointerMove(current.value + next.value)
+                    program.removeAt(i + 1)
+                }
+
+                is ValueChange if next is ValueChange && current.offset == next.offset -> {
+                    program[i] = ValueChange(current.value + next.value, current.offset)
+                    program.removeAt(i + 1)
+                }
+
+                else -> i++
             }
         }
     }
