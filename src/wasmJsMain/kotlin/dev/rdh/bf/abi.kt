@@ -19,10 +19,10 @@ private object HostOutput : BfOutput {
     override fun flush() = hostFlush()
 }
 
-@WasmImport("bf", "read_byte")
+@WasmImport("bf", "read")
 private external fun hostReadByte(): Int
 
-@WasmImport("bf", "write_byte")
+@WasmImport("bf", "write")
 private external fun hostWriteByte(value: Int)
 
 @WasmImport("bf", "flush")

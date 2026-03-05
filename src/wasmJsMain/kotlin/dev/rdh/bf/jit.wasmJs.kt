@@ -20,22 +20,22 @@ class WasmBinaryenJitRunner(private val options: SystemRunnerOptions) : BfRunner
 }
 
 @Suppress("UNUSED_PARAMETER")
+// language=js prefix=wasmBinary=0;
 private fun compileWasmModule(wasmBinary: JsAny): JsAny = js("new WebAssembly.Module(wasmBinary)")
 
 @Suppress("UNUSED_PARAMETER")
 private fun runWasmModule(wasmModule: JsAny, readByte: () -> Int, writeByte: (Int) -> Unit, flush: () -> Unit) {
-    js(
-        """
+    // language=js prefix=wasmModule=,readByte=,writeByte=,flush=0;
+    js("""
         const instance = new WebAssembly.Instance(wasmModule, {
           bf: {
-            read_byte: () => readByte(),
-            write_byte: (v) => writeByte(v | 0),
+            read: () => readByte(),
+            write: (v) => writeByte(v | 0),
             flush: () => flush(),
           }
         });
         instance.exports.run();
-        """
-    )
+    """)
 }
 
 internal fun bfCompile(program: List<BFOperation>, options: SystemRunnerOptions): BinaryenModule {
@@ -47,14 +47,14 @@ internal fun bfCompile(program: List<BFOperation>, options: SystemRunnerOptions)
     module.addFunctionImport(
         internalName = "read",
         externalModuleName = "bf",
-        externalBaseName = "read_byte",
+        externalBaseName = "read",
         params = ns.none,
         results = ns.i32,
     )
     module.addFunctionImport(
         internalName = "write",
         externalModuleName = "bf",
-        externalBaseName = "write_byte",
+        externalBaseName = "write",
         params = ns.i32,
         results = ns.none,
     )
