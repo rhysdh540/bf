@@ -146,9 +146,17 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reade
     fun MethodVisitor.writeOp(op: BFOperation): Unit = when(op) {
         is PointerMove -> {
             // pointer += op.value
-            load(pointer)
-            addOffset(op.value)
-            store(pointer)
+            when {
+                op.value == 0 -> Unit
+                !opts.overflowProtection && op.value in Short.MIN_VALUE..Short.MAX_VALUE -> {
+                    inc(pointer, op.value)
+                }
+                else -> {
+                    load(pointer)
+                    addOffset(op.value)
+                    store(pointer)
+                }
+            }
         }
         is ValueChange -> {
             // tape[pointer + op.offset] += op.value

@@ -277,6 +277,10 @@ inline val MethodVisitor.lneg; get() = visitInsn(LNEG)
 inline val MethodVisitor.fneg; get() = visitInsn(FNEG)
 inline val MethodVisitor.dneg; get() = visitInsn(DNEG)
 
+inline fun MethodVisitor.inc(local: LocalVar, value: Int = 1) {
+    if (local.type.sort != Type.INT) throw IllegalArgumentException("Can only increment integer local variables")
+    inc(local.index, value)
+}
 inline fun MethodVisitor.inc(index: Int, value: Int = 1) = visitIincInsn(index, value)
 
 // region bitwise
