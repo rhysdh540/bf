@@ -2,6 +2,18 @@
 <html lang="en">
 <head>
     <title>bf</title>
+    <script>
+        const {origin, pathname, search, hash} = window.location;
+        const basePath = pathname.endsWith("/") ? pathname : (pathname + "/");
+        const base = document.createElement("base");
+        base.href = origin + basePath;
+        document.head.appendChild(base);
+
+        if (pathname.length > 1 && pathname.endsWith("/")) {
+            const noSlash = pathname.slice(0, -1);
+            window.history.replaceState({}, document.title, noSlash + search + hash);
+        }
+    </script>
     <style>
         textarea {
             width: 100%;
@@ -22,13 +34,6 @@
         }
     </style>
     <script src="./coop.js"></script>
-    <script>
-        const { pathname, search, hash } = window.location;
-        if (pathname.length > 1 && pathname.endsWith('/')) {
-            const noSlash = pathname.slice(0, -1);
-            window.history.replaceState({}, document.title, noSlash + search + hash);
-        }
-    </script>
 </head>
 <body>
 <textarea id="code" rows="10">++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.</textarea>
