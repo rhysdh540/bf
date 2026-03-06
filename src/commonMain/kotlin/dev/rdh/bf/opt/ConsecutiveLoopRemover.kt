@@ -1,9 +1,8 @@
-package dev.rdh.bf.opt.strip
+package dev.rdh.bf.opt
 
 import dev.rdh.bf.BFOperation
 import dev.rdh.bf.Loop
 import dev.rdh.bf.SetToConstant
-import dev.rdh.bf.opt.OptimisationPass
 
 /**
  * Optimisation pass that removes consecutive loops and set-to-zero operations.

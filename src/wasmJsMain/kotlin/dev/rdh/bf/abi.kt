@@ -3,7 +3,6 @@
 package dev.rdh.bf
 
 import dev.rdh.bf.opt.bfOptimise
-import dev.rdh.bf.opt.bfStrip
 import kotlin.js.ExperimentalJsExport
 import kotlin.js.JsExport
 import kotlin.js.JsName
@@ -33,20 +32,16 @@ private const val PROGRAM_CACHE_LIMIT = 8
 private data class ProgramKey(
     val source: String,
     val optimise: Boolean,
-    val strip: Boolean,
 )
 
 private val programHandles = linkedMapOf<ProgramKey, Int>()
 private val compiledPrograms = mutableMapOf<Int, BfExecutable>()
 private var nextProgramHandle = 1
 
-private fun buildProgram(source: String, optimise: Boolean, strip: Boolean): List<BFOperation> {
+private fun buildProgram(source: String, optimise: Boolean): List<BFOperation> {
     var program = bfParse(source)
     if (optimise) {
         program = bfOptimise(program)
-    }
-    if (strip) {
-        program = bfStrip(program)
     }
     return program
 }
@@ -68,8 +63,8 @@ private fun rememberProgram(key: ProgramKey, executable: BfExecutable): Int {
 
 @JsExport
 @JsName("compileProgram")
-fun compileProgram(source: String, optimise: Boolean, strip: Boolean): Int {
-    val key = ProgramKey(source = source, optimise = optimise, strip = strip)
+fun compileProgram(source: String, optimise: Boolean): Int {
+    val key = ProgramKey(source = source, optimise = optimise)
     val cached = programHandles[key]
     if (cached != null) {
         // touch key so frequently used programs are evicted last
@@ -78,7 +73,7 @@ fun compileProgram(source: String, optimise: Boolean, strip: Boolean): Int {
         return cached
     }
 
-    val executable = systemRunner().compile(buildProgram(source, optimise, strip))
+    val executable = systemRunner().compile(buildProgram(source, optimise))
     return rememberProgram(key, executable)
 }
 
@@ -100,6 +95,6 @@ fun clearProgramCache() {
 
 @JsExport
 @JsName("run")
-fun run(source: String, optimise: Boolean, strip: Boolean) {
-    executeProgram(compileProgram(source, optimise, strip))
+fun run(source: String, optimise: Boolean) {
+    executeProgram(compileProgram(source, optimise))
 }

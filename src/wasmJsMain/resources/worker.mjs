@@ -101,14 +101,14 @@ self.onmessage = async (event) => {
         await initRuntime(msg.instantiateUrl);
         const workerStart = performance.now();
 
-        const key = (msg.optimise ? "1" : "0") + "|" + (msg.strip ? "1" : "0") + "|" + msg.code;
+        const key = (msg.optimise ? "1" : "0") + "|" + msg.code;
         activeRunId = msg.id;
         configureOutput(msg.outputMode, msg.outputDataBuffer, msg.outputCtlBuffer);
 
         let compileMs = 0;
         if (key !== compiledKey) {
             const compileStart = performance.now();
-            compiledHandle = wasmExports.compileProgram(msg.code, !!msg.optimise, !!msg.strip);
+            compiledHandle = wasmExports.compileProgram(msg.code, !!msg.optimise);
             compileMs = performance.now() - compileStart;
             compiledKey = key;
         }

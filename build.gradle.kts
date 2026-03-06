@@ -133,9 +133,8 @@ for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
-                "--optimise", "--strip",
-                "--compile", "--export",
-                "--time",
+                "--optimise", "--compile",
+                "--export", "--time",
                 "--overflow-protection",
                 file.absolutePath
             )

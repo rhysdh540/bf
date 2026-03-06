@@ -1,4 +1,4 @@
-package dev.rdh.bf.opt.strip
+package dev.rdh.bf.opt
 
 import dev.rdh.bf.BFOperation
 import dev.rdh.bf.Copy
@@ -6,7 +6,6 @@ import dev.rdh.bf.Loop
 import dev.rdh.bf.PointerMove
 import dev.rdh.bf.SetToConstant
 import dev.rdh.bf.ValueChange
-import dev.rdh.bf.opt.OptimisationPass
 
 /**
  * Optimisation pass that removes dead code at the start of the program.
@@ -15,7 +14,7 @@ import dev.rdh.bf.opt.OptimisationPass
  */
 internal object DeadStartRemover : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
-        while (program.first().valid) {
+        while (program.isNotEmpty() && program.first().valid) {
             program.removeFirst()
         }
     }

@@ -1,11 +1,6 @@
 package dev.rdh.bf.opt
 
 import dev.rdh.bf.BFOperation
-import dev.rdh.bf.opt.strip.ConsecutiveLoopRemover
-import dev.rdh.bf.opt.strip.DeadEndRemover
-import dev.rdh.bf.opt.strip.DeadStartRemover
-import dev.rdh.bf.opt.strip.ZeroRemover
-
 
 /**
  * Represents some form of modification to a program. Any optimisations should NOT change the behavior of the program.
@@ -21,40 +16,25 @@ internal interface OptimisationPass {
 fun bfOptimise(program: Iterable<BFOperation>, iterations: Int = 5): List<BFOperation> {
     val program = program.toMutableList()
 
-    val passes = arrayOf(
+    val corePasses = arrayOf(
         RunLengthMerger, ConstantReplacer, OffsetAdder, CopyLoopReplacer, WriteMerger
     )
-
-    repeat(iterations) {
-        passes.forEach {
-            it.run(program)
-        }
-
-        LoopOptimiser(*passes).run(program)
-    }
-
-    return program
-}
-
-/**
- * Removes unnecessary operations from a Brainfuck program.
- * This will:
- * - remove any [dev.rdh.bf.PointerMove] or [dev.rdh.bf.ValueChange] operations that have `value == 0`
- * - remove any loops at the beginning of the program, which will never run
- * - remove any [dev.rdh.bf.PointerMove], [dev.rdh.bf.ValueChange] or [dev.rdh.bf.SetToConstant] operations at the end of the program
- * - removes the second and after of any set of consecutive loops
- */
-fun bfStrip(program: Iterable<BFOperation>): List<BFOperation> {
-    val program = program.toMutableList()
-
-    val passes = arrayOf(
+    val cleanupPasses = arrayOf(
         DeadStartRemover,
         DeadEndRemover,
         ConsecutiveLoopRemover,
         ZeroRemover
     )
 
-    passes.forEach {
+    repeat(iterations) {
+        corePasses.forEach {
+            it.run(program)
+        }
+
+        LoopOptimiser(*corePasses).run(program)
+    }
+
+    cleanupPasses.forEach {
         it.run(program)
     }
 

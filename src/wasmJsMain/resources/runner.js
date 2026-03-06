@@ -162,7 +162,6 @@ runBtn.addEventListener('click', () => {
         instantiateUrl,
         code: codeEl.value,
         optimise: optimiseEl.checked,
-        strip: optimiseEl.checked,
         outputMode: currentRunUsesSab ? "sab" : "message",
         outputDataBuffer: currentRunUsesSab ? currentOutputData.buffer : null,
         outputCtlBuffer: currentRunUsesSab ? currentOutputCtl.buffer : null

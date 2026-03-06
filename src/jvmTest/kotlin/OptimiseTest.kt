@@ -1,7 +1,6 @@
 import dev.rdh.bf.opt.bfOptimise
 import dev.rdh.bf.bfParse
 import dev.rdh.bf.bfProgram
-import dev.rdh.bf.opt.bfStrip
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -18,9 +17,6 @@ class OptimiseTest {
                 increment(6, offset = 2)
                 moveRight()
             }
-            increment(6, offset = 2)
-            increment(7, offset = 3)
-            moveRight(3)
         }
 
         val optimised = bfOptimise(bfParse(program))
@@ -32,7 +28,6 @@ class OptimiseTest {
     fun testZero() {
         val program = "+++[-]."
         val expected = bfProgram {
-            setToZero()
             print()
         }
 
@@ -61,17 +56,13 @@ class OptimiseTest {
     @Test
     fun testStripping() {
         val program = "++++++>++++++[-]>++++++"
-        assertEquals(listOf(), bfStrip(bfOptimise(bfParse(program))))
+        assertEquals(listOf(), bfOptimise(bfParse(program)))
     }
 
     @Test
     fun testCopyLoop() {
         val program = "[->++>>+<<<]"
-        val expected = bfProgram {
-            copy(2, 1)
-            copy(1, 3)
-            set(0u)
-        }
+        val expected = listOf<dev.rdh.bf.BFOperation>()
 
         val optimised = bfOptimise(bfParse(program))
         assertEquals(expected, optimised)
@@ -80,10 +71,7 @@ class OptimiseTest {
     @Test
     fun edgeCase() {
         val program = ">>>>>-"
-        val expected = bfProgram {
-            moveRight(5)
-            decrement()
-        }
+        val expected = listOf<dev.rdh.bf.BFOperation>()
 
         val optimised = bfOptimise(bfParse(program))
         assertEquals(expected, optimised)
@@ -93,7 +81,6 @@ class OptimiseTest {
     fun testSetThenAddThenSet() {
         val program = "[-]++++[-]."
         val expected = bfProgram {
-            setToZero()
             print()
         }
 

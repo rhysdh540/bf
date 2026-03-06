@@ -3,7 +3,6 @@
 package dev.rdh.bf
 
 import dev.rdh.bf.opt.bfOptimise
-import dev.rdh.bf.opt.bfStrip
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.Path
 import kotlin.io.path.deleteRecursively
@@ -22,8 +21,6 @@ fun main(args: Array<String>) {
             |               Enable overflow protection for the following programs
             |       --optimise, -O
             |               Optimise the intermediate representation of the following programs
-            |       --strip, -S
-            |               Strip unused code from the following programs
             |       --compile, -c
             |               Compile the following programs to java bytecode
             |       --interpreted, -i
@@ -46,7 +43,6 @@ fun main(args: Array<String>) {
     var nextIsString = false
     var overflowProtection = false
     var optimise = false
-    var strip = false
     var export = false
     var time = false
 
@@ -64,7 +60,7 @@ fun main(args: Array<String>) {
     for (arg in args) {
         if (nextIsString) {
             nextIsString = false
-            runProgram(arg, optimise, strip, time, makeCompileOptions())
+            runProgram(arg, optimise, time, makeCompileOptions())
             continue
         }
 
@@ -75,11 +71,6 @@ fun main(args: Array<String>) {
 
         if (arg in arrayOf("--overflow-protection", "-o")) {
             overflowProtection = true
-            continue
-        }
-
-        if (arg in arrayOf("--strip", "-S")) {
-            strip = true
             continue
         }
 
@@ -116,7 +107,6 @@ fun main(args: Array<String>) {
             for (i in 1 until arg.length) {
                 when (arg[i]) {
                     'O' -> optimise = true
-                    'S' -> strip = true
                     'c' -> compiled = true
                     'i' -> compiled = false
                     'E' -> export = true
@@ -135,7 +125,7 @@ fun main(args: Array<String>) {
 
         if (arg.endsWith(".b") || arg.endsWith(".bf")) {
             val program = Path(arg).readText()
-            runProgram(program, optimise, strip, time, makeCompileOptions())
+            runProgram(program, optimise, time, makeCompileOptions())
         } else {
             println("Unknown argument: $arg")
             return
@@ -146,15 +136,12 @@ fun main(args: Array<String>) {
 private fun runProgram(
     literal: String,
     optimise: Boolean,
-    strip: Boolean,
     printTime: Boolean,
     systemRunnerOpts: SystemRunnerOptions?
 ) {
     var program = bfParse(literal)
     if (optimise)
         program = bfOptimise(program)
-    if (strip)
-        program = bfStrip(program)
 
     val runner = if (systemRunnerOpts != null) {
         systemRunner(systemRunnerOpts)

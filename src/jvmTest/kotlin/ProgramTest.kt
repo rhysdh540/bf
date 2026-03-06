@@ -6,7 +6,6 @@ import dev.rdh.bf.bfCompile
 import dev.rdh.bf.opt.bfOptimise
 import dev.rdh.bf.bfParse
 import dev.rdh.bf.bfRun
-import dev.rdh.bf.opt.bfStrip
 import java.io.Reader.nullReader
 import java.io.Writer.nullWriter
 import kotlin.test.Test
@@ -36,7 +35,6 @@ class ProgramTest {
 fun main() {
     val program = bfParse(getResource("mandelbrot.b"))
         .let { bfOptimise(it) }
-        .let { bfStrip(it) }
 
     val runs = 1
 
