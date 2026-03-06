@@ -26,7 +26,7 @@ const CTRL_WRITE = 0;
 const CTRL_READ = 1;
 const CTRL_DONE = 2;
 const OUTPUT_BUFFER_SIZE = 1024 * 1024;
-const supportsSab = typeof SharedArrayBuffer === "function" && globalThis.crossOriginIsolated === true;
+const supportsSab = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer === "function";
 
 function finishRun(doneMsg) {
     if (doneMsg == null) return;
@@ -34,10 +34,10 @@ function finishRun(doneMsg) {
     runBtn.disabled = false;
     outputEl.value += outputDecoder.decode();
     const compileLabel = doneMsg.compileMs > 0.0 ? `${doneMsg.compileMs.toFixed(2)} ms` : "cached";
-    timeEl.textContent = `Total: ${doneMsg.workerTotalMs.toFixed(2)} ms | Worker compile: ${compileLabel} | Worker execute: ${doneMsg.runMs.toFixed(2)} ms`;
+    timeEl.innerHTML = `<span title="compile: ${compileLabel} ms, execute: ${doneMsg.runMs.toFixed(2)} ms">done in ${doneMsg.workerTotalMs.toFixed(2)} ms</span>`;
 }
 
-function drainSabOutputAndMaybeFinish() {
+function drainBufAndMaybeFinish() {
     drainRafId = 0;
 
     if (!currentRunUsesSab || currentOutputData == null || currentOutputCtl == null) {
@@ -80,7 +80,7 @@ function drainSabOutputAndMaybeFinish() {
     }
 
     if (running || pendingDoneMessage != null) {
-        drainRafId = requestAnimationFrame(drainSabOutputAndMaybeFinish);
+        drainRafId = requestAnimationFrame(drainBufAndMaybeFinish);
     }
 }
 
@@ -107,7 +107,7 @@ worker.onmessage = (event) => {
         if (currentRunUsesSab) {
             pendingDoneMessage = msg;
             if (drainRafId === 0) {
-                drainRafId = requestAnimationFrame(drainSabOutputAndMaybeFinish);
+                drainRafId = requestAnimationFrame(drainBufAndMaybeFinish);
             }
         } else {
             finishRun(msg);
@@ -149,7 +149,7 @@ runBtn.addEventListener('click', () => {
             cancelAnimationFrame(drainRafId);
             drainRafId = 0;
         }
-        drainRafId = requestAnimationFrame(drainSabOutputAndMaybeFinish);
+        drainRafId = requestAnimationFrame(drainBufAndMaybeFinish);
     } else {
         currentOutputData = null;
         currentOutputCtl = null;

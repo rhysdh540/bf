@@ -17,34 +17,71 @@
     <style>
         textarea {
             width: 100%;
-            background: #252526;
-            color: #d4d4d4;
-            border: 1px solid #333;
+            resize: vertical;
             font-family: monospace;
             font-size: 14px;
+            padding: 10px;
+            box-sizing: border-box;
+            background-color: #23272a;
+            color: #eee;
+            border: 1px solid #444;
+
             white-space: pre;
             overflow-x: scroll;
             overflow-y: scroll;
-            resize: vertical;
         }
 
+        #output {
+            flex: 1;
+            resize: none;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #66aaff;
+        }
         body {
-            background: #1e1e1e;
-            color: #d4d4d4;
+            background: #181a1b;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            color: #eee;
+            height: 100vh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 0.5em;
+            box-sizing: border-box;
+            gap: 0.5em;
+        }
+        small {
+            color: #bbb;
+        }
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5em 1em;
+            background: transparent;
+            color: inherit;
+            border: 1px solid #444;
+            cursor: pointer;
+        }
+        button:hover, button:focus {
+            outline: none;
+            background-color: rgba(0, 0, 0, 0.15);
         }
     </style>
     <script src="./coop.js"></script>
 </head>
 <body>
 <textarea id="code" rows="10">++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.</textarea>
-<br/>
-<button id="run">Run</button>
-<label><input id="optimise" type="checkbox" checked/> Optimise</label>
-<label><input id="strip" type="checkbox" checked/> Strip</label>
-<button id="export">Export</button>
-<br/>
+<div id="ctrls" style="display: flex; align-items: center; gap: 1em">
+    <button id="run">Run</button>
+    <button id="export">Export</button>
+    <label><input id="optimise" type="checkbox" checked/> Optimise</label>
+    <label><input id="strip" type="checkbox" checked/> Strip</label>
+    <small id="time" style="position: absolute; right: 1em"></small>
+</div>
 <textarea id="output" rows="40" readonly style="width: 100%"></textarea>
-<small id="time"></small>
 <script>
     const instructions = "><+-.,[]";
     const params = new URLSearchParams(window.location.search);
