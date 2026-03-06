@@ -2,7 +2,21 @@
 <html lang="en">
 <head>
     <title>bf</title>
-    <style>textarea { width: 100%; }</style>
+    <style>
+        textarea {
+            width: 100%;
+                background: #252526;
+                color: #d4d4d4;
+                border: 1px solid #333;
+                font-family: monospace;
+                font-size: 14px;
+        }
+
+        body {
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+    </style>
 </head>
 <body>
 <textarea id="code" rows="10">++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.</textarea>
@@ -20,33 +34,92 @@
     const outputEl = document.getElementById('output');
     const runBtn = document.getElementById('run');
     const timeEl = document.getElementById('time');
+    const instantiateUrl = new URL("./bf.uninstantiated.mjs", import.meta.url).href;
+
+    runBtn.disabled = true;
+    timeEl.textContent = "Loading runtime...";
 
     // language=js
     const workerSource = `
-        self.onmessage = async (event) => {
-            const { instantiateUrl, code, optimise, strip } = event.data;
+        let runtimePromise = null;
+        let wasmExports = null;
+        let compiledHandle = 0;
+        let compiledKey = "";
+        let activeRunId = 0;
 
-            const binaryenUrl = "https://cdn.jsdelivr.net/npm/binaryen@125.0.0/index.js";
-            const binaryenNs = await import(binaryenUrl); // namespace with .default
+        function errorMessage(err) {
+            if (err && typeof err.message === "string") return err.message;
+            return String(err);
+        }
 
-            try {
-                const { instantiate } = await import(instantiateUrl);
-                const { exports } = await instantiate({
+        async function initRuntime(instantiateUrl) {
+            if (runtimePromise) return runtimePromise;
+            runtimePromise = (async () => {
+                const binaryenUrl = "https://cdn.jsdelivr.net/npm/binaryen@125.0.0/index.js";
+                const binaryenNs = await import(binaryenUrl);
+                const {instantiate} = await import(instantiateUrl);
+                const {exports} = await instantiate({
                     bf: {
                         read: () => -1,
                         write: (v) => self.postMessage({ type: "out", byte: v & 0xff }),
-                        flush: () => self.postMessage({ type: "flush" })
+                        flush: () => {}
                     },
                     binaryen: binaryenNs
                 });
+                if (typeof exports.compileProgram !== "function" || typeof exports.executeProgram !== "function") {
+                    throw new Error("Missing compileProgram/executeProgram exports");
+                }
+                wasmExports = exports;
+                return true;
+            })();
+            return runtimePromise;
+        }
 
-                exports.run(code, !!optimise, !!strip);
-                self.postMessage({ type: "done" });
+        self.onmessage = async (event) => {
+            const msg = event.data;
+            try {
+                if (msg.type === "init") {
+                    await initRuntime(msg.instantiateUrl);
+                    self.postMessage({type: "ready", id: msg.id});
+                    return;
+                }
+
+                if (msg.type === "reset") {
+                    if (wasmExports && typeof wasmExports.clearProgramCache === "function") {
+                        wasmExports.clearProgramCache();
+                    }
+                    compiledHandle = 0;
+                    compiledKey = "";
+                    self.postMessage({type: "reset-done", id: msg.id});
+                    return;
+                }
+
+                if (msg.type !== "run") {
+                    self.postMessage({type: "error", id: msg.id, message: "Unknown worker message: " + msg.type});
+                    return;
+                }
+
+                await initRuntime(msg.instantiateUrl);
+                const workerStart = performance.now();
+
+                const key = (msg.optimise ? "1" : "0") + "|" + (msg.strip ? "1" : "0") + "|" + msg.code;
+                activeRunId = msg.id;
+
+                let compileMs = 0;
+                if (key !== compiledKey) {
+                    const compileStart = performance.now();
+                    compiledHandle = wasmExports.compileProgram(msg.code, !!msg.optimise, !!msg.strip);
+                    compileMs = performance.now() - compileStart;
+                    compiledKey = key;
+                }
+
+                const runStart = performance.now();
+                wasmExports.executeProgram(compiledHandle);
+                const runMs = performance.now() - runStart;
+                const workerTotalMs = performance.now() - workerStart;
+                self.postMessage({type: "done", id: msg.id, compileMs, runMs, workerTotalMs});
             } catch (err) {
-                self.postMessage({
-                    type: "error",
-                    err: err
-                });
+                self.postMessage({type: "error", id: msg.id, message: errorMessage(err)});
             }
         };
     `;
@@ -55,61 +128,79 @@
         new Blob([workerSource], { type: "text/javascript" })
     );
 
-    let worker = null;
+    const worker = new Worker(workerUrl, {type: "module"});
+    let workerReady = false;
+    let running = false;
+    let currentRequestId = 0;
 
-    function stopWorker() {
-        if (worker) {
-            worker.terminate();
-            worker = null;
+    worker.onmessage = (event) => {
+        const msg = event.data;
+        if (msg.id !== undefined && msg.id !== currentRequestId && msg.type !== "ready") {
+            return;
         }
-    }
 
-    let startTime = 0;
+        if (msg.type === "ready") {
+            workerReady = true;
+            runBtn.disabled = false;
+            timeEl.textContent = "Runtime ready";
+            return;
+        }
+
+        if (msg.type === "out") {
+            outputEl.value += String.fromCharCode(msg.byte);
+            outputEl.scrollTop = outputEl.scrollHeight;
+            return;
+        }
+
+        if (msg.type === "done") {
+            running = false;
+            runBtn.disabled = false;
+            const compileLabel = msg.compileMs > 0.0 ? `${msg.compileMs.toFixed(2)} ms` : "cached";
+            timeEl.textContent = `Total: ${msg.workerTotalMs.toFixed(2)} ms | Worker compile: ${compileLabel} | Worker execute: ${msg.runMs.toFixed(2)} ms`;
+            return;
+        }
+
+        if (msg.type === "error") {
+            running = false;
+            runBtn.disabled = !workerReady;
+            if (outputEl.value.length !== 0 && !outputEl.value.endsWith('\n')) {
+                outputEl.value += "\n";
+            }
+            outputEl.value += `[worker error] ${msg.message}\n`;
+            timeEl.textContent = "Run failed";
+        }
+    };
+
     runBtn.addEventListener('click', () => {
-        stopWorker();
+        if (!workerReady || running) {
+            return;
+        }
 
         outputEl.value = "";
+        running = true;
         runBtn.disabled = true;
+        currentRequestId += 1;
+        timeEl.textContent = "Running...";
 
-        worker = new Worker(workerUrl, { type: "module" });
-        worker.onmessage = (event) => {
-            const msg = event.data;
-            if (msg.type === "out") {
-                outputEl.value += String.fromCharCode(msg.byte);
-                outputEl.scrollTop = outputEl.scrollHeight;
-                return;
-            }
-
-            if (msg.type === "done") {
-                runBtn.disabled = false;
-                stopWorker();
-                const endTime = performance.now();
-                timeEl.textContent = `Execution time: ${(endTime - startTime).toFixed(2)} ms`;
-                return;
-            }
-
-            if (msg.type === "error") {
-                if (outputEl.value.length !== 0 && !outputEl.value.endsWith('\n')) {
-                    outputEl.value += "\n";
-                }
-                outputEl.value += `[worker error] ${msg.err.message}\n`;
-                console.error("Worker error:", msg.err);
-                runBtn.disabled = false;
-                stopWorker();
-            }
-        };
-
-        startTime = performance.now();
         worker.postMessage({
-            instantiateUrl: new URL("./bf.uninstantiated.mjs", import.meta.url).href,
+            type: "run",
+            id: currentRequestId,
+            instantiateUrl,
             code: codeEl.value,
             optimise: optimiseEl.checked,
             strip: stripEl.checked
         });
     });
 
+    currentRequestId += 1;
+    worker.postMessage({
+        type: "init",
+        id: currentRequestId,
+        instantiateUrl
+    });
+
     window.addEventListener("beforeunload", () => {
-        stopWorker();
+        worker.terminate();
         URL.revokeObjectURL(workerUrl);
     });
 </script>

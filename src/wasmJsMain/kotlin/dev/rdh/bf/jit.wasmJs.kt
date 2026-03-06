@@ -12,9 +12,10 @@ class WasmBinaryenJitRunner(private val options: SystemRunnerOptions) : BfRunner
         val wasmBinary = module.emitBinary()
         module.dispose()
         val wasmModule = compileWasmModule(wasmBinary)
+        val wasmRunner = createWasmRunner(wasmModule)
 
         return BfExecutable { input, output ->
-            runWasmModule(wasmModule, input::readByte, output::writeByte, output::flush)
+            runWasmRunner(wasmRunner, input::readByte, output::writeByte, output::flush)
         }
     }
 }
@@ -24,19 +25,35 @@ class WasmBinaryenJitRunner(private val options: SystemRunnerOptions) : BfRunner
 private fun compileWasmModule(wasmBinary: JsAny): JsAny = js("new WebAssembly.Module(wasmBinary)")
 
 @Suppress("UNUSED_PARAMETER")
-private fun runWasmModule(wasmModule: JsAny, readByte: () -> Int, writeByte: (Int) -> Unit, flush: () -> Unit) {
-    // language=js prefix=wasmModule=,readByte=,writeByte=,flush=0;
-    js("""
-        const instance = new WebAssembly.Instance(wasmModule, {
-          bf: {
-            read: () => readByte(),
-            write: (v) => writeByte(v | 0),
-            flush: () => flush(),
-          }
-        });
-        instance.exports.run();
+// language=js prefix=wasmModule=0;
+private fun createWasmRunner(wasmModule: JsAny): JsAny = js("""
+        (() => {
+          const io = {
+            readByte: () => -1,
+            writeByte: (_v) => {},
+            flush: () => {}
+          };
+          const instance = new WebAssembly.Instance(wasmModule, {
+            bf: {
+              read: () => io.readByte(),
+              write: (v) => io.writeByte(v | 0),
+              flush: () => io.flush(),
+            }
+          });
+
+          return (readByte, writeByte, flush) => {
+            io.readByte = readByte;
+            io.writeByte = writeByte;
+            io.flush = flush;
+            instance.exports.run();
+          };
+        })()
     """)
-}
+
+@Suppress("UNUSED_PARAMETER")
+// language=js prefix=wasmRunner=,readByte=,writeByte=,flush=0;
+private fun runWasmRunner(wasmRunner: JsAny, readByte: () -> Int, writeByte: (Int) -> Unit, flush: () -> Unit): Unit =
+    js("wasmRunner(readByte, writeByte, flush)")
 
 internal fun bfCompile(program: List<BFOperation>, options: SystemRunnerOptions): BinaryenModule {
     val ns = binaryen
