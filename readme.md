@@ -1,10 +1,10 @@
 # bf
 
-a comprehensive brainf**k toolkit for kotlin/jvm
+a comprehensive brainf**k toolkit for kotlin/multiplatform
 
 ## Features
-- interpreter
+- interpreter 👍
 - a more efficient higher-level representation of instructions
-  - static analysis and optimizations for this IR
-- jit compiler to jvm bytecode
+  - static analysis and optimizations to translate raw bf code to this representation
+- jit compiler backends for jvm and wasm (more coming soon)
 - a small dsl to write bf programs verbosely in kotlin
