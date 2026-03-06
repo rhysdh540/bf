@@ -46,10 +46,53 @@
         let compiledHandle = 0;
         let compiledKey = "";
         let activeRunId = 0;
+        let outputMode = "message";
+        let outputData = null;
+        let outputCtl = null;
+        let outputCapacity = 0;
+
+        const CTRL_WRITE = 0;
+        const CTRL_READ = 1;
+        const CTRL_DONE = 2;
 
         function errorMessage(err) {
             if (err && typeof err.message === "string") return err.message;
             return String(err);
+        }
+
+        function configureOutput(mode, dataBuffer, ctlBuffer) {
+            outputMode = mode === "sab" ? "sab" : "message";
+            if (outputMode === "sab") {
+                outputData = new Uint8Array(dataBuffer);
+                outputCtl = new Int32Array(ctlBuffer);
+                outputCapacity = outputData.length;
+                Atomics.store(outputCtl, CTRL_WRITE, 0);
+                Atomics.store(outputCtl, CTRL_READ, 0);
+                Atomics.store(outputCtl, CTRL_DONE, 0);
+            } else {
+                outputData = null;
+                outputCtl = null;
+                outputCapacity = 0;
+            }
+        }
+
+        function writeByte(v) {
+            const byte = v & 0xff;
+            if (outputMode === "message") {
+                self.postMessage({type: "out", id: activeRunId, byte});
+                return;
+            }
+
+            while (true) {
+                const write = Atomics.load(outputCtl, CTRL_WRITE);
+                const read = Atomics.load(outputCtl, CTRL_READ);
+                if (write - read < outputCapacity) {
+                    outputData[write % outputCapacity] = byte;
+                    Atomics.store(outputCtl, CTRL_WRITE, write + 1);
+                    return;
+                }
+                Atomics.wait(outputCtl, CTRL_READ, read, 10);
+            }
         }
 
         async function initRuntime(instantiateUrl) {
@@ -61,7 +104,7 @@
                 const {exports} = await instantiate({
                     bf: {
                         read: () => -1,
-                        write: (v) => self.postMessage({ type: "out", byte: v & 0xff }),
+                        write: (v) => writeByte(v | 0),
                         flush: () => {}
                     },
                     binaryen: binaryenNs
@@ -104,6 +147,7 @@
 
                 const key = (msg.optimise ? "1" : "0") + "|" + (msg.strip ? "1" : "0") + "|" + msg.code;
                 activeRunId = msg.id;
+                configureOutput(msg.outputMode, msg.outputDataBuffer, msg.outputCtlBuffer);
 
                 let compileMs = 0;
                 if (key !== compiledKey) {
@@ -116,10 +160,15 @@
                 const runStart = performance.now();
                 wasmExports.executeProgram(compiledHandle);
                 const runMs = performance.now() - runStart;
+                if (outputMode === "sab") {
+                    Atomics.store(outputCtl, CTRL_DONE, 1);
+                    Atomics.notify(outputCtl, CTRL_READ, 1);
+                }
                 const workerTotalMs = performance.now() - workerStart;
                 self.postMessage({type: "done", id: msg.id, compileMs, runMs, workerTotalMs});
             } catch (err) {
                 self.postMessage({type: "error", id: msg.id, message: errorMessage(err)});
+                console.error("Worker error:", err);
             }
         };
     `;
@@ -132,6 +181,74 @@
     let workerReady = false;
     let running = false;
     let currentRequestId = 0;
+    let currentRunUsesSab = false;
+    let currentOutputData = null;
+    let currentOutputCtl = null;
+    let drainRafId = 0;
+    let pendingDoneMessage = null;
+    let outputDecoder = new TextDecoder();
+
+    const CTRL_WRITE = 0;
+    const CTRL_READ = 1;
+    const CTRL_DONE = 2;
+    const OUTPUT_BUFFER_SIZE = 1024 * 1024;
+    const supportsSab = typeof SharedArrayBuffer === "function" && globalThis.crossOriginIsolated === true;
+
+    function finishRun(doneMsg) {
+        if (doneMsg == null) return;
+        running = false;
+        runBtn.disabled = false;
+        outputEl.value += outputDecoder.decode();
+        const compileLabel = doneMsg.compileMs > 0.0 ? `${doneMsg.compileMs.toFixed(2)} ms` : "cached";
+        timeEl.textContent = `Total: ${doneMsg.workerTotalMs.toFixed(2)} ms | Worker compile: ${compileLabel} | Worker execute: ${doneMsg.runMs.toFixed(2)} ms`;
+    }
+
+    function drainSabOutputAndMaybeFinish() {
+        drainRafId = 0;
+
+        if (!currentRunUsesSab || currentOutputData == null || currentOutputCtl == null) {
+            if (pendingDoneMessage != null) {
+                const msg = pendingDoneMessage;
+                pendingDoneMessage = null;
+                finishRun(msg);
+            }
+            return;
+        }
+
+        const write = Atomics.load(currentOutputCtl, CTRL_WRITE);
+        let read = Atomics.load(currentOutputCtl, CTRL_READ);
+        let text = "";
+        while (read < write) {
+            const index = read % OUTPUT_BUFFER_SIZE;
+            const chunk = Math.min(write - read, OUTPUT_BUFFER_SIZE - index);
+            const decodeChunk = new Uint8Array(chunk);
+            decodeChunk.set(currentOutputData.subarray(index, index + chunk));
+            text += outputDecoder.decode(decodeChunk, {stream: true});
+            read += chunk;
+        }
+        if (text.length > 0) {
+            outputEl.value += text;
+            outputEl.scrollTop = outputEl.scrollHeight;
+        }
+
+        Atomics.store(currentOutputCtl, CTRL_READ, read);
+        Atomics.notify(currentOutputCtl, CTRL_READ, 1);
+
+        if (pendingDoneMessage != null) {
+            const done = Atomics.load(currentOutputCtl, CTRL_DONE) === 1;
+            const drained = Atomics.load(currentOutputCtl, CTRL_READ) === Atomics.load(currentOutputCtl, CTRL_WRITE);
+            if (done && drained) {
+                const msg = pendingDoneMessage;
+                pendingDoneMessage = null;
+                finishRun(msg);
+                return;
+            }
+        }
+
+        if (running || pendingDoneMessage != null) {
+            drainRafId = requestAnimationFrame(drainSabOutputAndMaybeFinish);
+        }
+    }
 
     worker.onmessage = (event) => {
         const msg = event.data;
@@ -153,16 +270,21 @@
         }
 
         if (msg.type === "done") {
-            running = false;
-            runBtn.disabled = false;
-            const compileLabel = msg.compileMs > 0.0 ? `${msg.compileMs.toFixed(2)} ms` : "cached";
-            timeEl.textContent = `Total: ${msg.workerTotalMs.toFixed(2)} ms | Worker compile: ${compileLabel} | Worker execute: ${msg.runMs.toFixed(2)} ms`;
+            if (currentRunUsesSab) {
+                pendingDoneMessage = msg;
+                if (drainRafId === 0) {
+                    drainRafId = requestAnimationFrame(drainSabOutputAndMaybeFinish);
+                }
+            } else {
+                finishRun(msg);
+            }
             return;
         }
 
         if (msg.type === "error") {
             running = false;
             runBtn.disabled = !workerReady;
+            pendingDoneMessage = null;
             if (outputEl.value.length !== 0 && !outputEl.value.endsWith('\n')) {
                 outputEl.value += "\n";
             }
@@ -177,10 +299,28 @@
         }
 
         outputEl.value = "";
+        outputDecoder = new TextDecoder();
+        pendingDoneMessage = null;
         running = true;
         runBtn.disabled = true;
         currentRequestId += 1;
-        timeEl.textContent = "Running...";
+        currentRunUsesSab = supportsSab;
+        if (currentRunUsesSab) {
+            currentOutputData = new Uint8Array(new SharedArrayBuffer(OUTPUT_BUFFER_SIZE));
+            currentOutputCtl = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 3));
+            Atomics.store(currentOutputCtl, CTRL_WRITE, 0);
+            Atomics.store(currentOutputCtl, CTRL_READ, 0);
+            Atomics.store(currentOutputCtl, CTRL_DONE, 0);
+            if (drainRafId !== 0) {
+                cancelAnimationFrame(drainRafId);
+                drainRafId = 0;
+            }
+            drainRafId = requestAnimationFrame(drainSabOutputAndMaybeFinish);
+        } else {
+            currentOutputData = null;
+            currentOutputCtl = null;
+        }
+        timeEl.textContent = currentRunUsesSab ? "Running (shared buffer)..." : "Running (fallback mode)...";
 
         worker.postMessage({
             type: "run",
@@ -188,7 +328,10 @@
             instantiateUrl,
             code: codeEl.value,
             optimise: optimiseEl.checked,
-            strip: stripEl.checked
+            strip: stripEl.checked,
+            outputMode: currentRunUsesSab ? "sab" : "message",
+            outputDataBuffer: currentRunUsesSab ? currentOutputData.buffer : null,
+            outputCtlBuffer: currentRunUsesSab ? currentOutputCtl.buffer : null
         });
     });
 
@@ -200,6 +343,9 @@
     });
 
     window.addEventListener("beforeunload", () => {
+        if (drainRafId !== 0) {
+            cancelAnimationFrame(drainRafId);
+        }
         worker.terminate();
         URL.revokeObjectURL(workerUrl);
     });
