@@ -21,7 +21,7 @@
             color: #d4d4d4;
         }
     </style>
-    <script src="coop.js"></script>
+    <script src="./coop.js"></script>
     <script>
         const { pathname, search, hash } = window.location;
         if (pathname.length > 1 && pathname.endsWith('/')) {
@@ -85,6 +85,6 @@
         window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
     });
 </script>
-<script type="module" src="runner.js"></script>
+<script type="module" src="./runner.js"></script>
 </body>
 </html>
