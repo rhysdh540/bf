@@ -32,20 +32,20 @@ kotlin {
     }
 
     sourceSets {
-        val wasmJsMain by getting {
+        named("wasmJsMain") {
             dependencies {
                 implementation(npm("binaryen", "125.0.0"))
             }
         }
 
-        val jvmMain by getting {
+        named("jvmMain") {
             dependencies {
                 implementation("org.ow2.asm:asm-util:9.9")
                 implementation("org.ow2.asm:asm-commons:9.9")
             }
         }
 
-        val jvmTest by getting {
+        named("jvmTest") {
             dependencies {
                 implementation(kotlin("test"))
             }
@@ -125,8 +125,6 @@ tasks.assemble {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
-
-val wasmDemoDir = layout.buildDirectory.dir("wasm-demo")
 
 for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
     if (file.isFile && file.extension == "b") {
