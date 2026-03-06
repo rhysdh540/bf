@@ -39,7 +39,7 @@ jobs:
         run: |
           rm -rf site
           mkdir -p site
-          cp build/processedResources/wasmJs/main/index.html site/
+          cp -R build/processedResources/wasmJs/main/* site/
           cp -R build/compileSync/wasmJs/main/productionExecutable/optimized/* site/
           touch site/.nojekyll
 
