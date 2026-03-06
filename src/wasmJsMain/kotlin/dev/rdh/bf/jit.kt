@@ -51,8 +51,8 @@ private fun createWasmRunner(wasmModule: JsAny): JsAny = js("""
     """)
 
 @Suppress("UNUSED_PARAMETER")
-// language=js prefix=wasmRunner=,readByte=,writeByte=,flush=0;
 private fun runWasmRunner(wasmRunner: JsAny, readByte: () -> Int, writeByte: (Int) -> Unit, flush: () -> Unit): Unit =
+    // language=js prefix=wasmRunner=,readByte=,writeByte=,flush=0;
     js("wasmRunner(readByte, writeByte, flush)")
 
 internal fun bfCompile(program: List<BFOperation>, options: SystemRunnerOptions): BinaryenModule {

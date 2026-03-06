@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalWasmInterop::class)
+@file:OptIn(ExperimentalWasmInterop::class, ExperimentalJsExport::class)
 
 package dev.rdh.bf
 
@@ -36,7 +36,7 @@ private data class ProgramKey(
     val strip: Boolean,
 )
 
-private val programHandles = LinkedHashMap<ProgramKey, Int>()
+private val programHandles = linkedMapOf<ProgramKey, Int>()
 private val compiledPrograms = mutableMapOf<Int, BfExecutable>()
 private var nextProgramHandle = 1
 
@@ -66,7 +66,6 @@ private fun rememberProgram(key: ProgramKey, executable: BfExecutable): Int {
     return handle
 }
 
-@OptIn(ExperimentalJsExport::class)
 @JsExport
 @JsName("compileProgram")
 fun compileProgram(source: String, optimise: Boolean, strip: Boolean): Int {
@@ -83,7 +82,6 @@ fun compileProgram(source: String, optimise: Boolean, strip: Boolean): Int {
     return rememberProgram(key, executable)
 }
 
-@OptIn(ExperimentalJsExport::class)
 @JsExport
 @JsName("executeProgram")
 fun executeProgram(programHandle: Int) {
@@ -92,7 +90,6 @@ fun executeProgram(programHandle: Int) {
     executable.run(HostInput, HostOutput)
 }
 
-@OptIn(ExperimentalJsExport::class)
 @JsExport
 @JsName("clearProgramCache")
 fun clearProgramCache() {
@@ -101,7 +98,6 @@ fun clearProgramCache() {
     nextProgramHandle = 1
 }
 
-@OptIn(ExperimentalJsExport::class)
 @JsExport
 @JsName("run")
 fun run(source: String, optimise: Boolean, strip: Boolean) {

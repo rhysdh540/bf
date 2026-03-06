@@ -86,7 +86,6 @@ internal external class BinaryenModule : JsAny {
         internalName: String? = definedExternally,
     )
 
-    // addGlobal(name: string, type: Type, mutable: boolean, init: ExpressionRef): GlobalRef;
     fun addGlobal(
         name: String,
         type: BinaryenType,
