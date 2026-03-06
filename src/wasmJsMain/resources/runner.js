@@ -27,13 +27,21 @@ const CTRL_DONE = 2;
 const OUTPUT_BUFFER_SIZE = 1024 * 1024;
 const supportsSab = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer === "function";
 
+function formatTime(ms) {
+    if (ms < 1000) {
+        return `${ms.toFixed(2)} ms`;
+    } else {
+        return `${(ms / 1000).toFixed(2)} s`;
+    }
+}
+
 function finishRun(doneMsg) {
     if (doneMsg == null) return;
     running = false;
     runBtn.disabled = false;
     outputEl.value += outputDecoder.decode();
-    const compileLabel = doneMsg.compileMs > 0.0 ? `${doneMsg.compileMs.toFixed(2)} ms` : "cached";
-    timeEl.innerHTML = `<span title="compile: ${compileLabel} ms, execute: ${doneMsg.runMs.toFixed(2)} ms">done in ${doneMsg.workerTotalMs.toFixed(2)} ms</span>`;
+    const compileLabel = doneMsg.compileMs > 0.0 ? formatTime(doneMsg.compileMs) : "cached";
+    timeEl.innerHTML = `<span title="compile: ${compileLabel}, execute: ${formatTime(doneMsg.runMs)}">done in ${formatTime(doneMsg.workerTotalMs)}</span>`;
 }
 
 function drainBufAndMaybeFinish() {

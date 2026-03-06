@@ -17,7 +17,7 @@ fun bfOptimise(program: Iterable<BFOperation>, iterations: Int = 5): List<BFOper
     val program = program.toMutableList()
 
     val corePasses = arrayOf(
-        RunLengthMerger, ConstantReplacer, OffsetAdder, CopyLoopReplacer, WriteMerger
+        ConstantReplacer, OffsetAdder, CopyLoopReplacer, OpMerger
     )
     val cleanupPasses = arrayOf(
         DeadStartRemover,
@@ -37,8 +37,6 @@ fun bfOptimise(program: Iterable<BFOperation>, iterations: Int = 5): List<BFOper
     cleanupPasses.forEach {
         it.run(program)
     }
-
-    LoopOptimiser(ConsecutiveLoopRemover, ZeroRemover).run(program)
 
     return program
 }

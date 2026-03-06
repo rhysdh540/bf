@@ -8,6 +8,7 @@ import kotlin.io.path.Path
 import kotlin.io.path.deleteRecursively
 import kotlin.io.path.readText
 import kotlin.time.measureTime
+import kotlin.time.measureTimedValue
 
 @OptIn(ExperimentalPathApi::class)
 fun main(args: Array<String>) {
@@ -148,11 +149,12 @@ private fun runProgram(
     } else {
         InterpreterRunner
     }
-    val executable = runner.compile(program)
+    val (executable, cTime) = measureTimedValue { runner.compile(program) }
 
     val time = measureTime { executable.run(SysInInput, SysOutOutput) }
 
     if (printTime) {
+        System.err.println("Compile time: ${formatTime(cTime)}")
         System.err.println("Execution time: ${formatTime(time)}")
     }
 }
