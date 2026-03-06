@@ -2,7 +2,7 @@
 # yarn lockfile v1
 
 
-binaryen@116.0.0:
-  version "116.0.0"
-  resolved "https://registry.yarnpkg.com/binaryen/-/binaryen-116.0.0.tgz#ad79fb939246138fb128d9438d5574152ece39fe"
-  integrity sha512-Hp0dXC6Cb/rTwWEoUS2BRghObE7g/S9umKtxuTDt3f61G6fNTE/YVew/ezyy3IdHcLx3f17qfh6LwETgCfvWkQ==
+binaryen@125.0.0:
+  version "125.0.0"
+  resolved "https://registry.yarnpkg.com/binaryen/-/binaryen-125.0.0.tgz#ed8b9a6c424668c449f40b47220ae69072e20234"
+  integrity sha512-X7CUM9ZnwL/Ow++JH5AJKiemc82J7JyeryuPvXQdXBLcL/rqrC5KMUB1mHiORSolietH9sotvaOZlr6HSwPAlw==

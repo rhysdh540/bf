@@ -19,6 +19,7 @@ internal external val binaryen: BinaryenNamespace
 internal typealias BinaryenType = Int
 internal typealias BinaryenExprRef = Int
 internal typealias BinaryenFunctionRef = Int
+internal typealias BinaryenGlobalRef = Int
 
 internal external interface BinaryenNamespace : JsAny {
     val ready: Promise<JsAny?>
@@ -31,12 +32,14 @@ internal external interface BinaryenNamespace : JsAny {
     val unreachable: BinaryenType
     val Features: BinaryenFeatures
 
-    fun createType(types: JsArray<kotlin.js.JsNumber>): BinaryenType
+    fun createType(types: JsArray<JsNumber>): BinaryenType
 }
 
 internal external interface BinaryenFeatures : JsAny {
     val MVP: Int
     val All: Int
+    val BulkMemory: Int
+    val BulkMemoryOpt: Int
 }
 
 @JsName("Module")
@@ -57,26 +60,50 @@ internal external class BinaryenModule : JsAny {
         name: String,
         params: BinaryenType,
         results: BinaryenType,
-        vars: JsArray<kotlin.js.JsNumber>,
+        vars: JsArray<JsNumber>,
         body: BinaryenExprRef,
     ): BinaryenFunctionRef
 
     fun block(
         label: String?,
-        children: JsArray<kotlin.js.JsNumber>,
+        children: JsArray<JsNumber>,
         resultType: BinaryenType? = definedExternally,
     ): BinaryenExprRef
 
     fun call(
         name: String,
-        operands: JsArray<kotlin.js.JsNumber>,
+        operands: JsArray<JsNumber>,
         returnType: BinaryenType,
     ): BinaryenExprRef
+
+    fun setMemory(
+        initial: Int,
+        maximum: Int,
+        exportName: String? = definedExternally,
+        segments: JsArray<BinaryenMemorySegment>? = definedExternally,
+        shared: Boolean? = definedExternally,
+        memory64: Boolean? = definedExternally,
+        internalName: String? = definedExternally,
+    )
+
+    // addGlobal(name: string, type: Type, mutable: boolean, init: ExpressionRef): GlobalRef;
+    fun addGlobal(
+        name: String,
+        type: BinaryenType,
+        mutable: Boolean,
+        init: BinaryenExprRef,
+    ): BinaryenGlobalRef
 
     @JsName("return")
     fun ret(value: BinaryenExprRef = definedExternally): BinaryenExprRef
 
     fun nop(): BinaryenExprRef
+
+    @JsName("br_if")
+    fun brIf(label: String, condition: BinaryenExprRef? = definedExternally, value: BinaryenExprRef? = definedExternally): BinaryenExprRef
+    fun loop(label: String? = definedExternally, body: BinaryenExprRef): BinaryenExprRef
+    fun `if`(condition: BinaryenExprRef, ifTrue: BinaryenExprRef, ifFalse: BinaryenExprRef? = definedExternally): BinaryenExprRef
+    fun br(label: String, condition: BinaryenExprRef? = definedExternally, value: BinaryenExprRef? = definedExternally): BinaryenExprRef
 
     fun validate(): Int
     fun optimize()
@@ -87,6 +114,13 @@ internal external class BinaryenModule : JsAny {
     val local: BinaryenLocalOps
     val global: BinaryenGlobalOps
     val i32: BinaryenI32Ops
+    val memory: BinaryenMemoryOps
+}
+
+internal external interface BinaryenMemorySegment : JsAny {
+    val offset: BinaryenExprRef
+    val data: String
+    val passive: Boolean
 }
 
 internal external interface BinaryenLocalOps : JsAny {
@@ -98,6 +132,14 @@ internal external interface BinaryenLocalOps : JsAny {
 internal external interface BinaryenGlobalOps : JsAny {
     fun get(name: String, type: BinaryenType): BinaryenExprRef
     fun set(name: String, value: BinaryenExprRef): BinaryenExprRef
+}
+
+internal external interface BinaryenMemoryOps : JsAny {
+    fun size(name: String? = definedExternally, memory64: Boolean? = definedExternally): BinaryenExprRef
+    fun grow(value: BinaryenExprRef, name: String? = definedExternally, memory64: Boolean? = definedExternally): BinaryenExprRef
+    fun init(segment: Int, dest: BinaryenExprRef, offset: BinaryenExprRef, size: BinaryenExprRef, name: String? = definedExternally): BinaryenExprRef
+    fun copy(dest: BinaryenExprRef, source: BinaryenExprRef, size: BinaryenExprRef, destName: String? = definedExternally, sourceName: String? = definedExternally): BinaryenExprRef
+    fun fill(dest: BinaryenExprRef, value: BinaryenExprRef, size: BinaryenExprRef, name: String? = definedExternally): BinaryenExprRef
 }
 
 internal external interface BinaryenI32Ops : JsAny {
@@ -118,17 +160,33 @@ internal external interface BinaryenI32Ops : JsAny {
     fun store8(offset: Int, align: Int, ptr: BinaryenExprRef, value: BinaryenExprRef, name: String? = definedExternally): BinaryenExprRef
 }
 
-internal fun BinaryenNamespace.newModule(): BinaryenModule = newBinaryenModule(this)
-
-@OptIn(ExperimentalWasmJsInterop::class)
-private fun newBinaryenModule(ns: BinaryenNamespace): BinaryenModule = js("new ns.Module()")
-
-internal fun BinaryenNamespace.createType(types: List<BinaryenType>): BinaryenType {
-    return createType(types.map { it.toJsNumber() }.toTypedArray().toJsArray())
+internal fun BinaryenNamespace.newModule(): BinaryenModule {
+    return newModule(this)
 }
 
-internal fun binaryenNumberArrayOf(vararg values: Int): JsArray<kotlin.js.JsNumber> {
-    return values.map { it.toJsNumber() }.toTypedArray().toJsArray()
+@Suppress("UNUSED_PARAMETER")
+private fun newModule(ns: BinaryenNamespace): BinaryenModule = js("new ns.Module()")
+
+internal fun Iterable<Number>.toJs(): JsArray<JsNumber> {
+    return this.map {
+        when (it) {
+            is Byte, is Short, is Int -> it.toInt().toJsNumber()
+            is Long, is Float, is Double -> it.toDouble().toJsNumber()
+            else -> throw IllegalArgumentException("Unsupported number type: ${it::class}")
+        }
+    }.toTypedArray().toJsArray()
+}
+
+internal fun BinaryenNamespace.createType(types: List<BinaryenType>): BinaryenType {
+    return createType(types.toJs())
+}
+
+internal fun binaryenNumberArrayOf(vararg values: Int): JsArray<JsNumber> {
+    return values.toList().toJs()
+}
+
+internal fun jsArrayOf(vararg values: JsAny): JsArray<JsAny> {
+    return values.toList().toJsArray()
 }
 
 internal fun BinaryenModule.addFunction(

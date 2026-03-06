@@ -26,7 +26,7 @@
         self.onmessage = async (event) => {
             const { instantiateUrl, code, optimise, strip } = event.data;
 
-            const binaryenUrl = "https://cdn.jsdelivr.net/npm/binaryen@116.0.0/index.js";
+            const binaryenUrl = "https://cdn.jsdelivr.net/npm/binaryen@125.0.0/index.js";
             const binaryenNs = await import(binaryenUrl); // namespace with .default
 
             try {
@@ -45,7 +45,7 @@
             } catch (err) {
                 self.postMessage({
                     type: "error",
-                    message: err && err.message ? err.message : String(err)
+                    err: err
                 });
             }
         };
@@ -92,7 +92,8 @@
                 if (outputEl.value.length !== 0 && !outputEl.value.endsWith('\n')) {
                     outputEl.value += "\n";
                 }
-                outputEl.value += `[worker error] ${msg.message}\n`;
+                outputEl.value += `[worker error] ${msg.err.message}\n`;
+                console.error("Worker error:", msg.err);
                 runBtn.disabled = false;
                 stopWorker();
             }

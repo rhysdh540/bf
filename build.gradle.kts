@@ -34,7 +34,7 @@ kotlin {
     sourceSets {
         val wasmJsMain by getting {
             dependencies {
-                implementation(npm("binaryen", "116.0.0"))
+                implementation(npm("binaryen", "125.0.0"))
             }
         }
 
