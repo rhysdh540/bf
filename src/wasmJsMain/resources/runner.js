@@ -1,6 +1,5 @@
 const codeEl = document.getElementById('code');
 const optimiseEl = document.getElementById('optimise');
-const stripEl = document.getElementById('strip');
 const outputEl = document.getElementById('output');
 const runBtn = document.getElementById('run');
 const timeEl = document.getElementById('time');
@@ -163,7 +162,7 @@ runBtn.addEventListener('click', () => {
         instantiateUrl,
         code: codeEl.value,
         optimise: optimiseEl.checked,
-        strip: stripEl.checked,
+        strip: optimiseEl.checked,
         outputMode: currentRunUsesSab ? "sab" : "message",
         outputDataBuffer: currentRunUsesSab ? currentOutputData.buffer : null,
         outputCtlBuffer: currentRunUsesSab ? currentOutputCtl.buffer : null
