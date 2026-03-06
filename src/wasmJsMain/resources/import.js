@@ -1,8 +1,11 @@
 const instructions = "><+-.,[]";
 
-const code = new URLSearchParams(window.location.search).get('code');
-if (code) {
-    const binary = atob(code);
+const code = document.getElementById('code');
+const exportButton = document.getElementById("export");
+
+const encoded = new URLSearchParams(window.location.search).get('code');
+if (encoded) {
+    const binary = atob(encoded);
 
     let bits = "";
     for (let i = 0; i < binary.length; i++) {
@@ -15,10 +18,14 @@ if (code) {
         output += instructions[value];
     }
 
-    document.getElementById('code').value = output;
+    code.value = output;
+} else {
+    code.value = "++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.";
 }
 
-document.getElementById("export").addEventListener("click", () => {
+code.removeAttribute("readonly");
+
+exportButton.addEventListener("click", () => {
     const code = document.getElementById("code").value;
     let bits = "";
     for (let i = 0; i < code.length; i++) {
@@ -40,3 +47,5 @@ document.getElementById("export").addEventListener("click", () => {
     url.searchParams.set("code", btoa(binary));
     window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
 });
+
+exportButton.removeAttribute("disabled");

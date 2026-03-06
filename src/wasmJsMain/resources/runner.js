@@ -94,6 +94,7 @@ worker.onmessage = (event) => {
         workerReady = true;
         runBtn.disabled = false;
         timeEl.textContent = "Runtime ready";
+        runBtn.removeAttribute("disabled");
         return;
     }
 
