@@ -25,7 +25,7 @@ import kotlin.random.Random
 
 @JvmName("compile")
 @OptIn(ExperimentalStdlibApi::class)
-fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reader, Writer) -> Unit {
+fun bfCompile(program: Iterable<BFAffineOp>, opts: SystemRunnerOptions): (Reader, Writer) -> Unit {
     val className = "BFProgram$${Random.nextInt().toHexString()}"
     val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
     cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
@@ -117,13 +117,15 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reade
         }
     }
 
+    val scratchBase = 4
+
     // bf code has a lot of repeated loops, so we can reuse the same method
-    val loopCache = mutableMapOf<Loop, String>()
+    val loopCache = mutableMapOf<BFAffineLoop, String>()
     var loopI = 1
     val loopMethodDescriptor = desc<Int>(type<Reader>(), type<Writer>(), type<ByteArray>(), type<Int>())
 
     // loop bodies go in separate functions, because the jvm can't handle large methods well
-    fun makeLoopBody(loop: Loop, writeOp: MethodVisitor.(BFOperation) -> Unit): String {
+    fun makeLoopBody(loop: BFAffineLoop, writeOp: MethodVisitor.(BFAffineOp) -> Unit): String {
         return loopCache.getOrPut(loop) {
             val methodName = "loop$loopI"
             loopI++
@@ -143,74 +145,98 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reade
         }
     }
 
-    fun MethodVisitor.writeOp(op: BFOperation): Unit = when(op) {
-        is PointerMove -> {
-            // pointer += op.value
-            when {
-                op.value == 0 -> Unit
-                !opts.overflowProtection && op.value in Short.MIN_VALUE..Short.MAX_VALUE -> {
-                    inc(pointer, op.value)
-                }
-                else -> {
-                    load(pointer)
-                    addOffset(op.value)
-                    store(pointer)
-                }
+    fun MethodVisitor.shiftPointer(delta: Int) {
+        when {
+            delta == 0 -> Unit
+            !opts.overflowProtection && delta in Short.MIN_VALUE..Short.MAX_VALUE -> inc(pointer, delta)
+            else -> {
+                load(pointer)
+                addOffset(delta)
+                store(pointer)
             }
         }
-        is ValueChange -> {
-            // tape[pointer + op.offset] += op.value
-            load(tape)
-            load(pointer)
-            addOffset(op.offset)
+    }
 
-            dup2
-            baload
+    fun MethodVisitor.loadCell(offset: Int) {
+        load(tape)
+        load(pointer)
+        addOffset(offset)
+        baload
+    }
 
-            int(op.value.absoluteValue)
-            if (op.value >= 0) iadd else isub
-//            i2b
-
-            bastore
+    fun MethodVisitor.writeExpr(expr: BFAffineExpr, localByRef: Map<Int, LocalVar>) {
+        int(expr.constant)
+        for (term in expr.terms) {
+            if (term.coefficient == 0) continue
+            load(localByRef[term.offset] ?: error("Missing local for ref offset ${term.offset}"))
+            if (term.coefficient.absoluteValue != 1) {
+                int(term.coefficient.absoluteValue)
+                imul
+            }
+            if (term.coefficient > 0) iadd else isub
         }
-        is Print -> {
-            // stdout.write(tape[pointer + op.offset])
+    }
+
+    fun MethodVisitor.writeSegment(segment: BFAffineSegment): Unit = when (segment) {
+        is BFAffineWriteBatch -> {
+            val refs = segment.writes
+                .flatMap { write -> write.expr.terms.map { it.offset } }
+                .distinct()
+                .sorted()
+
+            val localByRef = mutableMapOf<Int, LocalVar>()
+            for ((i, ref) in refs.withIndex()) {
+                val local = local<Int>(scratchBase + i)
+                localByRef[ref] = local
+                loadCell(ref)
+                store(local)
+            }
+
+            for (write in segment.writes) {
+                load(tape)
+                load(pointer)
+                addOffset(write.offset)
+                writeExpr(write.expr, localByRef)
+                bastore
+            }
+        }
+
+        is BFAffinePrint -> {
             load(output)
-
-            load(tape)
-            load(pointer)
-            addOffset(op.offset)
-            visitInsn(BALOAD)
-
+            loadCell(segment.offset)
             int(0xFF)
             iand
-
             invokevirtual<Writer>("write", desc<Void>(type<Int>()))
         }
-        is Input -> {
-            // tape[pointer + op.offset] = (byte) stdin.read()
+
+        is BFAffineInput -> {
             load(tape)
             load(pointer)
-            addOffset(op.offset)
-
+            addOffset(segment.offset)
             load(input)
             invokevirtual<Reader>("read", desc<Int>())
-//            i2b
-
             bastore
         }
-        is Loop -> {
-            // while (tape[pointer] != 0) { ... }
+    }
+
+    fun MethodVisitor.writeOp(op: BFAffineOp): Unit = when (op) {
+        is BFAffineBlock -> {
+            shiftPointer(op.baseShift)
+            for (segment in op.segments) {
+                writeSegment(segment)
+            }
+            shiftPointer(op.pointerDelta - op.baseShift)
+        }
+
+        is BFAffineLoop -> {
             val loopStart = Label()
             val loopEnd = Label()
             mark(loopStart)
             // if (tape[pointer] == 0) break
-            load(tape)
-            load(pointer)
-            baload
+            loadCell(0)
             ifeq(loopEnd)
 
-            if (op.any { it is Loop }) {
+            if (op.any { it is BFAffineLoop }) {
                 val methodName = makeLoopBody(op) { writeOp(it) }
 
                 // call the loop body
@@ -229,33 +255,6 @@ fun bfCompile(program: Iterable<BFOperation>, opts: SystemRunnerOptions): (Reade
             // jump back to the start of the loop
             goto(loopStart)
             mark(loopEnd)
-        }
-        is SetToConstant -> {
-            // tape[pointer + op.offset] = op.value
-            load(tape)
-            load(pointer)
-            addOffset(op.offset)
-            int(op.value.toInt())
-            bastore
-        }
-        is Copy -> {
-            // tape[pointer + op.offset] = (byte) tape[pointer + op.offset] + (tape[pointer] * op.multiplier)
-            load(tape)
-            load(pointer)
-            addOffset(op.offset)
-            dup2
-            baload
-            load(tape)
-            load(pointer)
-            baload
-
-            if (op.multiplier.absoluteValue != 1) {
-                int(op.multiplier.absoluteValue)
-                imul
-            }
-            if (op.multiplier >= 0) iadd else isub
-
-            bastore
         }
     }
 

@@ -3,6 +3,7 @@ import dev.rdh.bf.NullOutput
 import dev.rdh.bf.StringOutput
 import dev.rdh.bf.SystemRunnerOptions
 import dev.rdh.bf.bfCompile
+import dev.rdh.bf.bfLowerAffine
 import dev.rdh.bf.opt.bfOptimise
 import dev.rdh.bf.bfParse
 import dev.rdh.bf.bfRun
@@ -50,7 +51,7 @@ fun main() {
 
     println("Interpreted time: ${formatTime(interpretedTime.div(runs))}")
 
-    val compiled = bfCompile(program, SystemRunnerOptions(export = true))
+    val compiled = bfCompile(bfLowerAffine(program), SystemRunnerOptions(export = true))
 
     val jitTime = measureTime {
         repeat(runs) {
