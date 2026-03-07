@@ -99,7 +99,7 @@ internal fun bfCompile(program: List<BFOperation>, options: SystemRunnerOptions)
         name = "run",
         params = ns.none,
         results = ns.none,
-        vars = listOf(ns.i32),
+        vars = listOf(ns.i32, ns.i32),
         body = body,
     )
     module.addFunctionExport("run", "run")
@@ -121,6 +121,7 @@ private fun makeProgram(ns: BinaryenNamespace, m: BinaryenModule, program: List<
     val ops = mutableListOf<BinaryenExprRef>()
 
     val ptr = 0
+    val cachedCopySource = 1
 
     ops += m.memory.fill(
         m.i32.const(0),
@@ -133,105 +134,239 @@ private fun makeProgram(ns: BinaryenNamespace, m: BinaryenModule, program: List<
     // sadly we cannot deduplicate loops
     var nLoops = 0
 
-    // offset parameters are unsigned in wasm, so we need to implement negative offsets like this
-    fun getptr(offset: Int = 0, includePositiveOffset: Boolean = false): BinaryenExprRef {
-        val get = m.local.get(ptr, ns.i32)
-        return if (offset >= 0) {
-            if (includePositiveOffset) m.i32.add(get, m.i32.const(offset)) else get
-        } else {
-            m.i32.sub(get, m.i32.const(-offset))
-        }
-    }
+    fun ptrGet() = m.local.get(ptr, ns.i32)
 
-    fun load(offset: Int = 0, includePositiveOffset: Boolean = false): BinaryenExprRef {
+    fun load(offset: Int): BinaryenExprRef {
+        if (offset < 0) throw IllegalArgumentException("Offset must be non-negative, got $offset")
         return m.i32.load8U(
-            offset = if (offset > 0 && !includePositiveOffset) offset else 0,
-            ptr = getptr(offset, includePositiveOffset),
+            offset = offset,
+            ptr = ptrGet(),
             align = 1,
         )
     }
 
-    fun set(offset: Int = 0, value: BinaryenExprRef, includePositiveOffset: Boolean = false): BinaryenExprRef {
+    fun store(offset: Int, value: BinaryenExprRef): BinaryenExprRef {
+        if (offset < 0) throw IllegalArgumentException("Offset must be non-negative, got $offset")
         return m.i32.store8(
-            offset = if (offset > 0 && !includePositiveOffset) offset else 0,
-            ptr = getptr(offset, includePositiveOffset),
+            offset = offset,
+            ptr = ptrGet(),
             align = 1,
             value = value,
         )
     }
 
-    fun BFOperation.toExpr(): BinaryenExprRef = when (this) {
-        is PointerMove -> m.local.set(
-            ptr,
-            m.i32.add(
-                getptr(),
-                m.i32.const(this.value),
-            )
-        )
-        is ValueChange -> set(
-            offset = this.offset,
-            value = m.i32.add(
-                load(this.offset),
-                m.i32.const(this.value),
-            )
-        )
-        is Print -> m.call(
-            "write",
-            listOf(load(this.offset)),
-            ns.none,
-        )
-        is Input -> set(
-            offset = this.offset,
-            value = m.call("read", emptyList(), ns.i32)
-        )
-        is Loop -> {
-            val id = nLoops++
-            val exitLabel = "loop_exit_$id"
-            val headLabel = "loop_head_$id"
+    data class LoweredValueChange(val offset: Int, val value: Int)
+    data class LoweredPrint(val offset: Int)
+    data class LoweredInput(val offset: Int)
+    data class LoweredSetToConstant(val offset: Int, val value: UByte)
+    data class LoweredCopy(val sourceOffset: Int, val targetOffset: Int, val multiplier: Int)
 
-            m.block(
-                label = exitLabel,
-                children = listOf(
-                    m.loop(
-                        label = headLabel,
-                        body = m.block(
-                            label = null,
-                            children = buildList {
-                                add(m.brIf(
-                                    label = exitLabel,
-                                    condition = m.i32.eqz(load())
-                                ))
-                                for (op in this@toExpr) {
-                                    add(op.toExpr())
-                                }
-                                add(m.br(headLabel))
-                            },
-                            resultType = ns.none,
-                        )
+    fun lowerLinearBlock(block: List<BFOperation>): List<BinaryenExprRef> {
+        if (block.isEmpty()) return emptyList()
+
+        var pointerDelta = 0
+        val lowered = mutableListOf<Any>()
+
+        for (op in block) {
+            when (op) {
+                is PointerMove -> pointerDelta += op.value
+                is ValueChange -> lowered += LoweredValueChange(offset = pointerDelta + op.offset, value = op.value)
+                is Print -> lowered += LoweredPrint(offset = pointerDelta + op.offset)
+                is Input -> lowered += LoweredInput(offset = pointerDelta + op.offset)
+                is SetToConstant -> lowered += LoweredSetToConstant(offset = pointerDelta + op.offset, value = op.value)
+                is Copy -> lowered += LoweredCopy(
+                    sourceOffset = pointerDelta,
+                    targetOffset = pointerDelta + op.offset,
+                    multiplier = op.multiplier,
+                )
+                is Loop -> error("Loop should not appear in linear lowering")
+            }
+        }
+
+        if (lowered.isEmpty()) {
+            return if (pointerDelta == 0) {
+                emptyList()
+            } else {
+                listOf(
+                    m.local.set(
+                        ptr,
+                        m.i32.add(ptrGet(), m.i32.const(pointerDelta)),
                     )
-                ),
-                resultType = ns.none,
+                )
+            }
+        }
+
+        var baseShift = minOf(0, pointerDelta)
+        for (op in lowered) {
+            when (op) {
+                is LoweredValueChange -> baseShift = minOf(baseShift, op.offset)
+                is LoweredPrint -> baseShift = minOf(baseShift, op.offset)
+                is LoweredInput -> baseShift = minOf(baseShift, op.offset)
+                is LoweredSetToConstant -> baseShift = minOf(baseShift, op.offset)
+                is LoweredCopy -> baseShift = minOf(baseShift, op.sourceOffset, op.targetOffset)
+            }
+        }
+
+        fun eff(offset: Int) = offset - baseShift
+        val result = mutableListOf<BinaryenExprRef>()
+
+        if (baseShift != 0) {
+            result += m.local.set(
+                ptr,
+                m.i32.add(ptrGet(), m.i32.const(baseShift)),
             )
         }
-        is SetToConstant -> set(
-            offset = this.offset,
-            value = m.i32.const(this.value.toInt())
-        )
-        is Copy -> set(
-            offset = this.offset,
-            value = m.i32.add(
-                load(this.offset),
-                m.i32.mul(
-                    load(),
-                    m.i32.const(this.multiplier),
-                )
+
+        var i = 0
+        while (i < lowered.size) {
+            val op = lowered[i]
+
+            if (op is LoweredCopy) {
+                val source = op.sourceOffset
+                var end = i + 1
+                while (end < lowered.size) {
+                    val next = lowered[end]
+                    if (next !is LoweredCopy || next.sourceOffset != source || next.targetOffset == source) {
+                        break
+                    }
+                    end++
+                }
+
+                if (end - i >= 2) {
+                    result += m.local.set(
+                        cachedCopySource,
+                        load(eff(source)),
+                    )
+
+                    for (j in i until end) {
+                        val copy = lowered[j] as LoweredCopy
+                        result += store(
+                            offset = eff(copy.targetOffset),
+                            value = m.i32.add(
+                                load(eff(copy.targetOffset)),
+                                m.i32.mul(
+                                    m.local.get(cachedCopySource, ns.i32),
+                                    m.i32.const(copy.multiplier),
+                                )
+                            )
+                        )
+                    }
+
+                    i = end
+                    continue
+                }
+            }
+
+            when (op) {
+                is LoweredValueChange -> {
+                    result += store(
+                        offset = eff(op.offset),
+                        value = m.i32.add(
+                            load(eff(op.offset)),
+                            m.i32.const(op.value),
+                        )
+                    )
+                }
+
+                is LoweredPrint -> {
+                    result += m.call(
+                        "write",
+                        listOf(load(eff(op.offset))),
+                        ns.none,
+                    )
+                }
+
+                is LoweredInput -> {
+                    result += store(
+                        offset = eff(op.offset),
+                        value = m.call("read", emptyList(), ns.i32),
+                    )
+                }
+
+                is LoweredSetToConstant -> {
+                    result += store(
+                        offset = eff(op.offset),
+                        value = m.i32.const(op.value.toInt()),
+                    )
+                }
+
+                is LoweredCopy -> {
+                    result += store(
+                        offset = eff(op.targetOffset),
+                        value = m.i32.add(
+                            load(eff(op.targetOffset)),
+                            m.i32.mul(
+                                load(eff(op.sourceOffset)),
+                                m.i32.const(op.multiplier),
+                            )
+                        )
+                    )
+                }
+            }
+
+            i++
+        }
+
+        val trailingShift = pointerDelta - baseShift
+        if (trailingShift != 0) {
+            result += m.local.set(
+                ptr,
+                m.i32.add(ptrGet(), m.i32.const(trailingShift)),
             )
-        )
+        }
+
+        return result
     }
 
-    for (op in program) {
-        ops += op.toExpr()
+    fun lowerProgram(program: List<BFOperation>): List<BinaryenExprRef> {
+        val result = mutableListOf<BinaryenExprRef>()
+
+        var i = 0
+        while (i < program.size) {
+            if (program[i] is Loop) {
+                val loop = program[i] as Loop
+                val id = nLoops++
+                val exitLabel = "loop_exit_$id"
+                val headLabel = "loop_head_$id"
+
+                result += m.block(
+                    label = exitLabel,
+                    children = listOf(
+                        m.loop(
+                            label = headLabel,
+                            body = m.block(
+                                label = null,
+                                children = buildList {
+                                    add(
+                                        m.brIf(
+                                            label = exitLabel,
+                                            condition = m.i32.eqz(load(0))
+                                        )
+                                    )
+                                    addAll(lowerProgram(loop.toList()))
+                                    add(m.br(headLabel))
+                                },
+                                resultType = ns.none,
+                            )
+                        )
+                    ),
+                    resultType = ns.none,
+                )
+                i++
+                continue
+            }
+
+            val blockStart = i
+            while (i < program.size && program[i] !is Loop) {
+                i++
+            }
+            result += lowerLinearBlock(program.subList(blockStart, i))
+        }
+
+        return result
     }
+
+    ops += lowerProgram(program)
 
     ops += m.call(
         "flush",
