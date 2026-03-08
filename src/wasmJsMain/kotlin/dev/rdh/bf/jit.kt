@@ -114,6 +114,8 @@ internal fun bfCompile(program: List<BFAffineOp>, options: SystemRunnerOptions):
     }
 
     if (!options.debugInfo) {
+        ns.setOptimizeLevel(3)
+        ns.setShrinkLevel(0)
         module.optimize()
     }
 
@@ -245,7 +247,7 @@ private fun makeProgram(ns: BinaryenNamespace, m: BinaryenModule, program: List<
         return result
     }
 
-    fun lowerProgram(loweredOps: List<BFAffineOp>): List<BinaryenExprRef> {
+    fun lowerProgram(loweredOps: List<BFAffineOp>): Array<BinaryenExprRef> {
         val result = mutableListOf<BinaryenExprRef>()
 
         for (op in loweredOps) {
@@ -256,37 +258,36 @@ private fun makeProgram(ns: BinaryenNamespace, m: BinaryenModule, program: List<
 
                 is BFAffineLoop -> {
                     val id = nLoops++
-                    val exitLabel = "loop_exit_$id"
-                    val headLabel = "loop_head_$id"
+                    val exitLabel = "e$id"
+                    val headLabel = "h$id"
 
                     result += m.block(
                         label = exitLabel,
                         children = listOf(
+                            m.brIf(
+                                label = exitLabel,
+                                condition = m.i32.eqz(load(0))
+                            ),
                             m.loop(
                                 label = headLabel,
                                 body = m.block(
                                     label = null,
-                                    children = buildList {
-                                        add(
-                                            m.brIf(
-                                                label = exitLabel,
-                                                condition = m.i32.eqz(load(0))
-                                            )
+                                    children = listOf(
+                                        *lowerProgram(op),
+                                        m.brIf(
+                                            label = headLabel,
+                                            condition = m.i32.ne(load(0), m.i32.const(0))
                                         )
-                                        addAll(lowerProgram(op))
-                                        add(m.br(headLabel))
-                                    },
-                                    resultType = ns.none,
+                                    )
                                 )
                             )
-                        ),
-                        resultType = ns.none,
+                        )
                     )
                 }
             }
         }
 
-        return result
+        return result.toTypedArray()
     }
 
     ops += lowerProgram(program)

@@ -33,6 +33,8 @@ internal external interface BinaryenNamespace : JsAny {
     val Features: BinaryenFeatures
 
     fun createType(types: JsArray<JsNumber>): BinaryenType
+    fun setOptimizeLevel(level: Int)
+    fun setShrinkLevel(level: Int)
 }
 
 internal external interface BinaryenFeatures : JsAny {
