@@ -94,7 +94,7 @@ internal object CopyLoopReplacer : OptimisationPass {
         if (normalized == 0 || normalized % 2 == 0) return null
 
         for (candidate in 1..255 step 2) {
-            if (normalized * (candidate and 0xFF) == 1) {
+            if ((normalized * candidate) and 0xFF == 1) {
                 return candidate
             }
         }

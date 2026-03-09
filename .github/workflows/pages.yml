@@ -32,6 +32,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Run Tests
+        run: ./gradlew jvmTest --no-daemon
+
       - name: Build Wasm Artifacts
         run: ./gradlew wasmJsProcessResources compileProductionExecutableKotlinWasmJsOptimize --no-daemon
 
