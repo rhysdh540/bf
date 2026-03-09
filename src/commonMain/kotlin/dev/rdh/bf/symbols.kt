@@ -62,7 +62,11 @@ data class Loop(private val contents: List<BFOperation>) : BFOperation, List<BFO
  * Represents a command to set the value at the current data pointer to a constant.
  * This isn't a standard command, but is used in [optimised][dev.rdh.bf.opt.bfOptimise] versions of programs.
  */
-data class SetToConstant(val value: UByte = 0u, val offset: Int = 0) : BFOperation
+data class SetToConstant(val value: UByte = 0u, val offset: Int = 0) : BFOperation {
+    companion object {
+        val Default = SetToConstant()
+    }
+}
 
 /**
  * Represents a command to add the current cell value multiplied by [multiplier]

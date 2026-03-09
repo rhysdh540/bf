@@ -81,7 +81,7 @@ internal object CopyLoopReplacer : OptimisationPass {
             }
         }
 
-        replacements += SetToConstant()
+        replacements += SetToConstant.Default
         return replacements
     }
 
