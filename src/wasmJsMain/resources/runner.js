@@ -1,4 +1,5 @@
 const codeEl = document.getElementById('code');
+const inputEl = document.getElementById('input');
 const optimiseEl = document.getElementById('optimise');
 const outputEl = document.getElementById('output');
 const runBtn = document.getElementById('run');
@@ -169,6 +170,7 @@ runBtn.addEventListener('click', () => {
         id: currentRequestId,
         instantiateUrl,
         code: codeEl.value,
+        input: inputEl.value,
         optimise: optimiseEl.checked,
         outputMode: currentRunUsesSab ? "sab" : "message",
         outputDataBuffer: currentRunUsesSab ? currentOutputData.buffer : null,

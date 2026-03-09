@@ -8,6 +8,9 @@ let outputData = null;
 let outputCtl = null;
 let outputCapacity = 0;
 
+let input = null;
+let inputPos = 0;
+
 const CTRL_WRITE = 0;
 const CTRL_READ = 1;
 const CTRL_DONE = 2;
@@ -59,7 +62,10 @@ async function initRuntime(instantiateUrl) {
         const {instantiate} = await import(instantiateUrl);
         const {exports} = await instantiate({
             bf: {
-                read: () => -1,
+                read: () => {
+                    if (!input || inputPos >= input.length) return -1;
+                    return input.charCodeAt(inputPos++) & 0xff;
+                },
                 write: (v) => writeByte(v | 0),
                 flush: () => {}
             },
@@ -100,6 +106,8 @@ self.onmessage = async (event) => {
 
         await initRuntime(msg.instantiateUrl);
         const workerStart = performance.now();
+        input = msg.input ? String(msg.input) : "";
+        inputPos = 0;
 
         const key = (msg.optimise ? "1" : "0") + "|" + msg.code;
         activeRunId = msg.id;

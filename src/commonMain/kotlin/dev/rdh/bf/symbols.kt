@@ -74,4 +74,8 @@ data class SetToConstant(val value: UByte = 0u, val offset: Int = 0) : BFOperati
  *
  * This operation does not modify the current cell.
  */
-data class Copy(val multiplier: Int, val offset: Int) : BFOperation
+data class Copy(val multiplier: Int, val offset: Int) : BFOperation {
+    init {
+        require(offset != 0) { "Cannot copy to the current cell (offset 0)" }
+    }
+}
