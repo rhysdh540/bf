@@ -2,11 +2,11 @@ const codeEl = document.getElementById('code');
 const optimiseEl = document.getElementById('optimise');
 const outputEl = document.getElementById('output');
 const runBtn = document.getElementById('run');
-const timeEl = document.getElementById('time');
+const statusEl = document.getElementById('status');
 const instantiateUrl = new URL("./bf.uninstantiated.mjs", import.meta.url).href;
 
 runBtn.disabled = true;
-timeEl.textContent = "Loading runtime...";
+statusEl.textContent = "Loading runtime...";
 
 const workerUrl = new URL("./worker.mjs", import.meta.url).href;
 
@@ -41,7 +41,7 @@ function finishRun(doneMsg) {
     runBtn.disabled = false;
     outputEl.value += outputDecoder.decode();
     const compileLabel = doneMsg.compileMs > 0.0 ? formatTime(doneMsg.compileMs) : "cached";
-    timeEl.innerHTML = `<span title="compile: ${compileLabel}, execute: ${formatTime(doneMsg.runMs)}">done in ${formatTime(doneMsg.workerTotalMs)}</span>`;
+    statusEl.innerHTML = `<span title="compile: ${compileLabel}, execute: ${formatTime(doneMsg.runMs)}">done in ${formatTime(doneMsg.workerTotalMs)}</span>`;
 }
 
 function drainBufAndMaybeFinish() {
@@ -100,7 +100,7 @@ worker.onmessage = (event) => {
     if (msg.type === "ready") {
         workerReady = true;
         runBtn.disabled = false;
-        timeEl.textContent = "Runtime ready";
+        statusEl.textContent = "Runtime ready";
         runBtn.removeAttribute("disabled");
         return;
     }
@@ -131,7 +131,7 @@ worker.onmessage = (event) => {
             outputEl.value += "\n";
         }
         outputEl.value += `[worker error] ${msg.message}\n`;
-        timeEl.textContent = "Run failed";
+        statusEl.textContent = "Run failed";
     }
 };
 
@@ -162,7 +162,7 @@ runBtn.addEventListener('click', () => {
         currentOutputData = null;
         currentOutputCtl = null;
     }
-    timeEl.textContent = currentRunUsesSab ? "Running (shared buffer)..." : "Running (fallback mode)...";
+    statusEl.textContent = currentRunUsesSab ? "Running (shared buffer)..." : "Running (fallback mode)...";
 
     worker.postMessage({
         type: "run",

@@ -1,23 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <title>bf</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-        const {origin, pathname, search, hash} = window.location;
-        const basePath = pathname.endsWith("/") ? pathname : (pathname + "/");
-        const base = document.createElement("base");
-        base.href = origin + basePath;
-        document.head.appendChild(base);
-
+        const { origin, pathname, search, hash } = window.location;
         if (pathname.length > 1 && pathname.endsWith("/")) {
+            const base = document.createElement("base");
+            base.href = origin + pathname;
+            document.head.appendChild(base);
             const noSlash = pathname.slice(0, -1);
             window.history.replaceState({}, document.title, noSlash + search + hash);
         }
     </script>
-    <link rel="stylesheet" href="style.css">
-    <script src="coop.js"></script>
+    <link rel="stylesheet" href="https://rdh540.dev/style.css" crossorigin="anonymous">
+    <script src="coi-serviceworker.js"></script>
 </head>
-<body>
+<body style="display: flex; flex-direction: column; gap: 0.25em; padding: 0.5em; box-sizing: border-box; height: 100vh">
 <textarea id="code" rows="10" readonly></textarea>
 <div id="ctrls" style="display: flex; align-items: center; gap: 1em">
     <button id="run" disabled>Run</button>
@@ -26,7 +26,7 @@
         <input id="optimise" type="checkbox" checked/>
         <span title="transform the program into a more efficient representation, making it a lot faster">Optimise</span>
     </label>
-    <small id="time" style="position: absolute; right: 1em"></small>
+    <small id="status" style="position: absolute; right: 1em"></small>
 </div>
 <textarea id="output" readonly style="width: 100%; resize: none; flex: 1"></textarea>
 <script type="module" src="import.js"></script>
