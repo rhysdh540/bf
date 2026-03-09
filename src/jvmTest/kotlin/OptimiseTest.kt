@@ -1,4 +1,11 @@
+import dev.rdh.bf.BFOperation
+import dev.rdh.bf.Copy
+import dev.rdh.bf.Loop
+import dev.rdh.bf.PointerMove
+import dev.rdh.bf.SetToConstant
+import dev.rdh.bf.ValueChange
 import dev.rdh.bf.opt.bfOptimise
+import dev.rdh.bf.opt.CopyLoopReplacer
 import dev.rdh.bf.bfParse
 import dev.rdh.bf.bfProgram
 import kotlin.test.Test
@@ -62,7 +69,7 @@ class OptimiseTest {
     @Test
     fun testCopyLoop() {
         val program = "[->++>>+<<<]"
-        val expected = listOf<dev.rdh.bf.BFOperation>()
+        val expected = listOf<BFOperation>()
 
         val optimised = bfOptimise(bfParse(program))
         assertEquals(expected, optimised)
@@ -71,7 +78,7 @@ class OptimiseTest {
     @Test
     fun edgeCase() {
         val program = ">>>>>-"
-        val expected = listOf<dev.rdh.bf.BFOperation>()
+        val expected = listOf<BFOperation>()
 
         val optimised = bfOptimise(bfParse(program))
         assertEquals(expected, optimised)
@@ -86,5 +93,54 @@ class OptimiseTest {
 
         val optimised = bfOptimise(bfParse(program))
         assertEquals(expected, optimised)
+    }
+
+    @Test
+    fun testGeneralizedCopyLoopWithOddInductionDelta() {
+        val loop = Loop(
+            ValueChange(-3),
+            PointerMove(1),
+            ValueChange(1),
+            PointerMove(-1),
+        )
+
+        val program = mutableListOf<BFOperation>(loop)
+        CopyLoopReplacer.run(program)
+
+        assertEquals(
+            listOf(
+                Copy(multiplier = -85, offset = 1),
+                SetToConstant(),
+            ),
+            program,
+        )
+    }
+
+    @Test
+    fun testGeneralizedCopyLoopCanEliminateInductionOnlyLoop() {
+        val loop = Loop(ValueChange(3))
+        val program = mutableListOf<BFOperation>(loop)
+
+        CopyLoopReplacer.run(program)
+
+        assertEquals(
+            listOf<BFOperation>(SetToConstant()),
+            program,
+        )
+    }
+
+    @Test
+    fun testGeneralizedCopyLoopSkipsNonInvertibleInductionDelta() {
+        val loop = Loop(
+            ValueChange(-2),
+            PointerMove(1),
+            ValueChange(1),
+            PointerMove(-1),
+        )
+
+        val program = mutableListOf<BFOperation>(loop)
+        CopyLoopReplacer.run(program)
+
+        assertEquals(listOf<BFOperation>(loop), program)
     }
 }

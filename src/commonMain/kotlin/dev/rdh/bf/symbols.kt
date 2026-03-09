@@ -55,6 +55,7 @@ data class Input(val offset: Int = 0) : BFOperation {
  */
 data class Loop(private val contents: List<BFOperation>) : BFOperation, List<BFOperation> by contents {
     constructor(contents: Iterable<BFOperation>) : this(contents.toList())
+    constructor(vararg contents: BFOperation) : this(contents.asList())
 }
 
 /**

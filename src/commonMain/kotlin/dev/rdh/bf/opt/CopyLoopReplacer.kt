@@ -9,18 +9,23 @@ import dev.rdh.bf.ValueChange
 import dev.rdh.bf.defaultMap
 
 /**
- * Optimization pass that replaces copy loops with [Copy] operations.
+ * Optimization pass that replaces linear byte loops with [Copy] operations.
  *
- * A copy loop is a loop that:
- * 1. Decrements the current cell by 1 each iteration
+ * A replaceable loop is one that:
+ * 1. Applies only [PointerMove] and [ValueChange]
  * 2. Moves to other cells and increments/decrements them by some amount
  * 3. Returns to the original position
+ * 4. Changes the induction cell (offset 0) by an odd amount each iteration
  *
  * For example, the loop `[->++>>+<<]` copies the current value:
  * - 2 times to the cell at offset +1
  * - 1 time to the cell at offset +3
  *
  * This gets replaced with `Copy(2, 1), Copy(1, 3), SetToConstant()`.
+ *
+ * The odd-induction requirement is the generalized part: in byte arithmetic,
+ * odd deltas are invertible modulo 256, so the loop trip count can be folded
+ * into constant multipliers.
  */
 internal object CopyLoopReplacer : OptimisationPass {
     override fun run(program: MutableList<BFOperation>) {
@@ -60,20 +65,40 @@ internal object CopyLoopReplacer : OptimisationPass {
         // Must return to original position
         if (currentOffset != 0) return null
 
-        val currentCellChange = offsetChanges.remove(0)
-        if (currentCellChange != -1) return null
+        val currentCellChange = offsetChanges.remove(0) ?: return null
+
+        // In mod256 arithmetic, only odd deltas are invertible
+        val inv = invertOdd(currentCellChange) ?: return null
+        val eliminationScale = -inv and 0xFF
 
         val replacements = mutableListOf<BFOperation>()
         for ((offset, change) in offsetChanges) {
             if (change != 0) {
-                replacements += Copy(multiplier = change, offset = offset)
+                val multiplier = forceByte(change * (eliminationScale and 0xFF))
+                if (multiplier != 0) {
+                    replacements += Copy(multiplier = multiplier, offset = offset)
+                }
             }
         }
 
-        // Must have at least one target to copy to
-        if (replacements.isEmpty()) return null
-
         replacements += SetToConstant()
         return replacements
+    }
+
+    private fun forceByte(value: Int): Int {
+        return if (value >= 128) value - 256 else value
+    }
+
+    private fun invertOdd(value: Int): Int? {
+        val normalized = value and 0xFF
+        if (normalized == 0 || normalized % 2 == 0) return null
+
+        for (candidate in 1..255 step 2) {
+            if (normalized * (candidate and 0xFF) == 1) {
+                return candidate
+            }
+        }
+
+        return null
     }
 }
