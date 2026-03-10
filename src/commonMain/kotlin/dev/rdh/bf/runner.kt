@@ -12,12 +12,6 @@ interface BfRunner {
     }
 }
 
-object InterpreterRunner : BfRunner {
-    override fun compile(program: Iterable<BFOperation>): BfExecutable {
-        return BfExecutable { i, o -> bfRun(program, i, o) }
-    }
-}
-
 /**
  * Options for the system runner, which may be used to enable or disable certain features of the runner.
  * Not all of these options may be supported on all platforms, and may be ignored if the runner does not support them.

@@ -196,7 +196,7 @@ private fun makeProgram(ns: BinaryenNamespace, m: BinaryenModule, program: List<
 
         for (segment in block.segments) {
             when (segment) {
-                is BFAffinePrint -> {
+                is BFAffineOutput -> {
                     result += m.call(
                         "write",
                         listOf(load(segment.offset)),

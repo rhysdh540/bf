@@ -6,7 +6,7 @@ package dev.rdh.bf
  * This IR has explicit block semantics:
  * - offsets are normalized relative to a block base shift
  * - writes are grouped into batches with entry-state references
- * - [BFAffinePrint]/[BFAffineInput] act as ordering barriers between write batches
+ * - [BFAffineOutput]/[BFAffineInput] act as ordering barriers between write batches
  */
 sealed interface BFAffineOp
 
@@ -48,7 +48,7 @@ sealed interface BFAffineSegment
 data class BFAffineWriteBatch(val writes: List<BFAffineWrite>) : BFAffineSegment
 
 /** Print the byte at [offset] relative to the block-shifted pointer. */
-data class BFAffinePrint(val offset: Int) : BFAffineSegment
+data class BFAffineOutput(val offset: Int) : BFAffineSegment
 
 /** Read one byte into [offset] relative to the block-shifted pointer. */
 data class BFAffineInput(val offset: Int) : BFAffineSegment
@@ -62,7 +62,7 @@ data class BFAffineWrite(
 /**
  * Affine expression over referenced cell values.
  *
- * `constant + sum(terms[i].coefficient * ref(terms[i].offset))`
+ * `constant + sum(terms[i].coefficient * tape[ptr + terms[i].offset])`
  */
 data class BFAffineExpr(
     val constant: Int = 0,
@@ -82,6 +82,36 @@ private data class MutableExpr(
         terms = terms.toMutableMap(),
         constant = constant,
     )
+
+    operator fun plus(other: MutableExpr): MutableExpr {
+        val out = copyExpr()
+        out.constant += other.constant
+        for ((ref, coeff) in other.terms) {
+            val next = (out.terms[ref] ?: 0) + coeff
+            if (next == 0) {
+                out.terms.remove(ref)
+            } else {
+                out.terms[ref] = next
+            }
+        }
+        return out
+    }
+
+    operator fun times(multiplier: Int): MutableExpr {
+        if (multiplier == 0) return constExpr(0)
+        val out = copyExpr()
+        out.constant *= multiplier
+        val refs = out.terms.keys.toList()
+        for (ref in refs) {
+            val next = (out.terms[ref] ?: 0) * multiplier
+            if (next == 0) {
+                out.terms.remove(ref)
+            } else {
+                out.terms[ref] = next
+            }
+        }
+        return out
+    }
 }
 
 private sealed interface LoweringStep
@@ -93,36 +123,6 @@ private data class StepCopy(val sourceOffset: Int, val targetOffset: Int, val mu
 
 private fun refExpr(offset: Int): MutableExpr = MutableExpr(terms = mutableMapOf(offset to 1))
 private fun constExpr(value: Int): MutableExpr = MutableExpr(constant = value)
-
-private operator fun MutableExpr.plus(other: MutableExpr): MutableExpr {
-    val out = copyExpr()
-    out.constant += other.constant
-    for ((ref, coeff) in other.terms) {
-        val next = (out.terms[ref] ?: 0) + coeff
-        if (next == 0) {
-            out.terms.remove(ref)
-        } else {
-            out.terms[ref] = next
-        }
-    }
-    return out
-}
-
-private operator fun MutableExpr.times(multiplier: Int): MutableExpr {
-    if (multiplier == 0) return constExpr(0)
-    val out = copyExpr()
-    out.constant *= multiplier
-    val refs = out.terms.keys.toList()
-    for (ref in refs) {
-        val next = (out.terms[ref] ?: 0) * multiplier
-        if (next == 0) {
-            out.terms.remove(ref)
-        } else {
-            out.terms[ref] = next
-        }
-    }
-    return out
-}
 
 /**
  * Lowers a loop-free basic block to affine form.
@@ -222,7 +222,7 @@ private fun lowerLinearBlock(block: List<BFOperation>): BFAffineBlock? {
             }
             is StepPrint -> {
                 flushState()
-                segments += BFAffinePrint(offset = eff(step.offset))
+                segments += BFAffineOutput(offset = eff(step.offset))
             }
             is StepInput -> {
                 flushState()

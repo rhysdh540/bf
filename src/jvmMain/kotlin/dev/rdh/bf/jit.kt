@@ -201,7 +201,7 @@ fun bfCompile(program: Iterable<BFAffineOp>, opts: SystemRunnerOptions): (Reader
             }
         }
 
-        is BFAffinePrint -> {
+        is BFAffineOutput -> {
             load(output)
             loadCell(segment.offset)
             int(0xFF)

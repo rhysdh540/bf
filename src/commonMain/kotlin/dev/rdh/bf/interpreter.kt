@@ -1,10 +1,13 @@
 package dev.rdh.bf
 
+object InterpreterRunner : BfRunner {
+    override fun compile(program: Iterable<BFOperation>): BfExecutable {
+        return BfExecutable { i, o -> bfRun(program, i, o) }
+    }
+}
+
 @OptIn(ExperimentalUnsignedTypes::class)
-fun bfRun(program: Iterable<BFOperation>,
-          stdin: BfInput,
-          stdout: BfOutput,
-) {
+fun bfRun(program: Iterable<BFOperation>, stdin: BfInput, stdout: BfOutput) {
     runImpl(UByteArray(TAPE_SIZE), 0, program.toList(), stdin, stdout)
     stdout.flush()
 }

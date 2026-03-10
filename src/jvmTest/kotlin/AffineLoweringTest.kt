@@ -1,7 +1,7 @@
 import dev.rdh.bf.BFAffineBlock
 import dev.rdh.bf.BFAffineInput
 import dev.rdh.bf.BFAffineLoop
-import dev.rdh.bf.BFAffinePrint
+import dev.rdh.bf.BFAffineOutput
 import dev.rdh.bf.BFAffineWrite
 import dev.rdh.bf.BFAffineWriteBatch
 import dev.rdh.bf.Copy
@@ -54,7 +54,7 @@ class AffineLoweringTest {
         assertEquals(0, block.pointerDelta)
         assertEquals(5, block.segments.size)
         assertIs<BFAffineWriteBatch>(block.segments[0])
-        assertIs<BFAffinePrint>(block.segments[1])
+        assertIs<BFAffineOutput>(block.segments[1])
         assertIs<BFAffineWriteBatch>(block.segments[2])
         assertIs<BFAffineInput>(block.segments[3])
         assertIs<BFAffineWriteBatch>(block.segments[4])
