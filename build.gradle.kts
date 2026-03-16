@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalWasmDsl::class)
+
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import proguard.ConfigurationParser
@@ -24,13 +26,22 @@ repositories {
 kotlin {
     jvmToolchain(25)
     jvm()
-    @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
         binaries.executable()
     }
 
+    macosX64 {
+        binaries.executable {
+            baseName = "bf"
+            entryPoint = "dev.rdh.bf.main"
+        }
+    }
+
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
+        val nativeMain by getting
         named("wasmJsMain") {
             dependencies {
                 implementation(npm("binaryen", "125.0.0"))
@@ -47,6 +58,16 @@ kotlin {
         named("jvmTest") {
             dependencies {
                 implementation(kotlin("test"))
+            }
+        }
+
+        val x64Main by creating {
+            dependsOn(nativeMain)
+        }
+
+        configureEach {
+            if ("X64" in this.name) {
+                dependsOn(x64Main)
             }
         }
     }
@@ -135,7 +156,6 @@ for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
             args = listOf(
                 "--optimise", "--compile",
                 "--export", "--time",
-                "--overflow-protection",
                 file.absolutePath
             )
 

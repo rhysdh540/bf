@@ -6,10 +6,6 @@ import java.io.PrintStream
 import java.io.Reader
 import java.io.Writer
 
-val SysOutOutput = System.out.bfOutput()
-val SysErrOutput = System.err.bfOutput()
-val SysInInput = System.`in`.bfInput()
-
 class ReaderInput(internal val reader: Reader) : BfInput {
     override fun readByte(): Int = reader.read()
 }

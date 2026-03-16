@@ -26,10 +26,10 @@ private fun runAffineImpl(tape: UByteArray, pointer: Int,
                 for (seg in op.segments) {
                     when (seg) {
                         is BFAffineInput -> {
-                            tape[pointer] = stdin.readByte().toUByte()
+                            tape[pointer.wrappingAdd(seg.offset, TAPE_SIZE)] = stdin.readByte().toUByte()
                         }
                         is BFAffineOutput -> {
-                            stdout.writeByte(tape[pointer].toInt())
+                            stdout.writeByte(tape[pointer.wrappingAdd(seg.offset, TAPE_SIZE)].toInt())
                         }
                         is BFAffineWriteBatch -> {
                             val values = seg.writes
