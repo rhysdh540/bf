@@ -4,7 +4,10 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import proguard.ConfigurationParser
 import proguard.ProGuard
+import kotlin.io.path.ExperimentalPathApi
 import proguard.Configuration as ProguardConfiguration
+import kotlin.io.path.Path
+import kotlin.io.path.deleteRecursively
 
 plugins {
     kotlin("multiplatform") version "2.3.10"
@@ -170,6 +173,11 @@ for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
                 doFirst {
                     standardInput = input.inputStream()
                 }
+            }
+
+            doFirst {
+                @OptIn(ExperimentalPathApi::class)
+                Path(".bf.out").deleteRecursively()
             }
 
             classpath = sourceSets["jvmMain"].runtimeClasspath
