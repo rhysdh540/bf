@@ -1,5 +1,10 @@
 package dev.rdh.bf
 
-actual fun systemRunner(options: SystemRunnerOptions): BfRunner {
-    return InterpreterRunner
+import kotlinx.cinterop.ExperimentalForeignApi
+
+class NativeExecutable(private val path: String) : BfExecutable {
+    @OptIn(ExperimentalForeignApi::class)
+    override fun run(input: BfInput, output: BfOutput) {
+        platform.posix.system(path)
+    }
 }

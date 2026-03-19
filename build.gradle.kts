@@ -69,9 +69,12 @@ kotlin {
         }
 
         configureEach {
-            if ("X64" in this.name) {
+            if ("X64Main" in this.name) {
                 dependsOn(x64Main)
             }
+        }
+        all {
+            languageSettings.enableLanguageFeature("ContextParameters")
         }
     }
 }
