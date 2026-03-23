@@ -45,7 +45,18 @@ sealed interface BFAffineSegment
  * Each write expression reads from the block entry state (or from the prior
  * barrier snapshot), not from writes that appear earlier in this same batch.
  */
-data class BFAffineWriteBatch(val writes: List<BFAffineWrite>) : BFAffineSegment
+data class BFAffineWriteBatch(val writes: List<BFAffineWrite>) : BFAffineSegment {
+    /**
+     * Sorted list of unique referenced offsets across all write expressions in this batch.
+     */
+    val refs: List<Int> by lazy {
+        writes.asSequence()
+            .flatMap { write -> write.expr.terms.map { it.offset } }
+            .distinct()
+            .sorted()
+            .toList()
+    }
+}
 
 /** Print the byte at [offset] relative to the block-shifted pointer. */
 data class BFAffineOutput(val offset: Int) : BFAffineSegment

@@ -179,13 +179,8 @@ fun bfCompile(program: Iterable<BFAffineOp>, opts: SystemRunnerOptions): (Reader
 
     fun MethodVisitor.writeSegment(segment: BFAffineSegment): Unit = when (segment) {
         is BFAffineWriteBatch -> {
-            val refs = segment.writes
-                .flatMap { write -> write.expr.terms.map { it.offset } }
-                .distinct()
-                .sorted()
-
             val localByRef = mutableMapOf<Int, LocalVar>()
-            for ((i, ref) in refs.withIndex()) {
+            for ((i, ref) in segment.refs.withIndex()) {
                 val local = local<Int>(scratchBase + i)
                 localByRef[ref] = local
                 loadCell(ref)

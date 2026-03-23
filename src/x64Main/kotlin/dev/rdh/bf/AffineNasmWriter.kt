@@ -5,12 +5,13 @@ import kotlinx.cinterop.cstr
 import kotlinx.cinterop.toKString
 import kotlin.math.abs
 
-object NasmWriter : BfRunner {
+object AffineNasmWriter : BfRunner {
     context(s: StringBuilder)
     private operator fun String.unaryPlus() = s.appendLine(this)
 
     @OptIn(ExperimentalForeignApi::class)
     override fun compile(program: Iterable<BFOperation>): BfExecutable {
+        val program = bfLowerAffine(program.toList())
         val s = buildString {
             fun addConst(dest: String, n: Int) {
                 val op = if (n < 0) "sub" else "add"
@@ -45,21 +46,59 @@ object NasmWriter : BfRunner {
             +"_start:"
             +"    lea rbx, [tape]"
             +"    add rbx, ${TAPE_SIZE / 2}"
+            +"    mov rbp, rsp"
 
             var loopCounter = 0
 
-            fun writeOp(op: BFOperation) {
-                when(op) {
-                    is Copy -> {
-                        +"    movzx eax, byte [rbx]"
-                        +"    imul eax, eax, ${op.multiplier}"
-                        +"    add byte [rbx + ${op.offset}], al"
-                    }
-                    is Input -> {
-                        +"    mov rsi, ${op.offset}"
+            fun writeSeg(seg: BFAffineSegment) {
+                when (seg) {
+                    is BFAffineInput -> {
+                        +"    mov rsi, ${seg.offset}"
                         +"    call in"
                     }
-                    is Loop -> {
+                    is BFAffineOutput -> {
+                        +"    mov rsi, ${seg.offset}"
+                        +"    call out"
+                    }
+                    is BFAffineWriteBatch -> {
+                        val localByRef = mutableMapOf<Int, Int>()
+                        for ((i, ref) in seg.refs.withIndex()) {
+                            +"    dec rsp" // reserve space for one value
+                            +"    movzx rax, byte [rbx + ${ref}]" // load into rax
+                            +"    mov [rsp], al" // and store on stack
+                            localByRef[ref] = -(i + 1) // offset from rbp
+                        }
+
+                        for (write in seg.writes) {
+                            +"    mov rax, ${write.expr.constant}"
+                            for (term in write.expr.terms) {
+                                val local = localByRef[term.offset] ?: error("Reference ${term.offset} not found")
+                                if (term.coefficient != 1) {
+                                    +"    movzx rdx, byte [rbp + $local]"
+                                    +"    imul rdx, ${term.coefficient}"
+                                    +"    add rax, rdx"
+                                } else {
+                                    +"    movzx rdx, byte [rbp + $local]"
+                                    +"    add rax, rdx"
+                                }
+                            }
+                            +"    mov byte [rbx + ${write.offset}], al"
+                        }
+                        +"    mov rsp, rbp"
+                    }
+                }
+            }
+
+            fun writeOp(op: BFAffineOp) {
+                when (op) {
+                    is BFAffineBlock -> {
+                        addConst("rbx", op.baseShift)
+                        for (seg in op.segments) {
+                            writeSeg(seg)
+                        }
+                        addConst("rbx", op.pointerDelta - op.baseShift)
+                    }
+                    is BFAffineLoop -> {
                         val c = loopCounter++
                         +"    jmp LC$c"
                         +"L$c:"
@@ -69,19 +108,6 @@ object NasmWriter : BfRunner {
                         +"LC$c:"
                         +"    cmp byte [rbx], 0"
                         +"    jnz L$c"
-                    }
-                    is PointerMove -> {
-                        addConst("rbx", op.value)
-                    }
-                    is Print -> {
-                        +"    mov rsi, ${op.offset}"
-                        +"    call out"
-                    }
-                    is SetToConstant -> {
-                        +"    mov byte [rbx + ${op.offset}], ${op.value}"
-                    }
-                    is ValueChange -> {
-                        addConst("byte [rbx + ${op.offset}]", op.value)
                     }
                 }
             }
@@ -117,11 +143,3 @@ object NasmWriter : BfRunner {
         return NativeExecutable(outfile)
     }
 }
-
-interface SysCallProvider {
-    val write: ULong
-    val read: ULong
-    val exit: ULong
-}
-
-expect val sys: SysCallProvider

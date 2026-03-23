@@ -32,12 +32,9 @@ private fun runAffineImpl(tape: UByteArray, pointer: Int,
                             stdout.writeByte(tape[pointer.wrappingAdd(seg.offset, TAPE_SIZE)].toInt())
                         }
                         is BFAffineWriteBatch -> {
-                            val values = seg.writes
-                                .flatMap { write -> write.expr.terms.map { it.offset } }
-                                .distinct()
-                                .associateWith { offset ->
-                                    tape[pointer.wrappingAdd(offset, TAPE_SIZE)].toInt()
-                                }
+                            val values = seg.refs.associateWith { offset ->
+                                tape[pointer.wrappingAdd(offset, TAPE_SIZE)].toInt()
+                            }
                             for (write in seg.writes) {
                                 val expr = write.expr.constant + write.expr.terms.sumOf { term ->
                                     values[term.offset]!! * term.coefficient

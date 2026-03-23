@@ -74,7 +74,7 @@ kotlin {
             }
         }
         all {
-            languageSettings.enableLanguageFeature("ContextParameters")
+            compilerOptions.freeCompilerArgs.add("-Xcontext-parameters")
         }
     }
 }

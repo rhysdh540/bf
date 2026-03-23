@@ -212,15 +212,10 @@ private fun makeProgram(ns: BinaryenNamespace, m: BinaryenModule, program: List<
                 }
 
                 is BFAffineWriteBatch -> {
-                    val refs = segment.writes
-                        .flatMap { write -> write.expr.terms.map { it.offset } }
-                        .distinct()
-                        .sorted()
-
-                    maxScratchLocals = maxOf(maxScratchLocals, refs.size)
+                    maxScratchLocals = maxOf(maxScratchLocals, segment.refs.size)
 
                     val localByRef = mutableMapOf<Int, Int>()
-                    refs.forEachIndexed { i, ref ->
+                    segment.refs.forEachIndexed { i, ref ->
                         val localIdx = scratchBase + i
                         localByRef[ref] = localIdx
                         result += m.local.set(localIdx, load(ref))
