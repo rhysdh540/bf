@@ -13,6 +13,7 @@ object NasmWriter : BfRunner {
     override fun compile(program: Iterable<BFOperation>): BfExecutable {
         val s = buildString {
             fun addConst(dest: String, n: Int) {
+                if (n == 0) return
                 val op = if (n < 0) "sub" else "add"
                 +"    $op $dest, ${abs(n)}"
             }

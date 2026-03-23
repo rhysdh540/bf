@@ -14,8 +14,21 @@ object AffineNasmWriter : BfRunner {
         val program = bfLowerAffine(program.toList())
         val s = buildString {
             fun addConst(dest: String, n: Int) {
+                if (n == 0) return
                 val op = if (n < 0) "sub" else "add"
                 +"    $op $dest, ${abs(n)}"
+            }
+
+            fun addScaled(coefficient: Int) {
+                val c = abs(coefficient)
+                val op = if (coefficient < 0) "sub" else "add"
+                when (c) {
+                    0 -> return
+                    2, 4, 8 -> +"    lea rdx, [rdx*$c]"
+                    3, 5, 9 -> +"    lea rdx, [rdx + rdx*${c - 1}]"
+                    else -> +"    imul rdx, $c"
+                }
+                +"    $op rax, rdx"
             }
 
             +"bits 64"
@@ -73,14 +86,8 @@ object AffineNasmWriter : BfRunner {
                             +"    mov rax, ${write.expr.constant}"
                             for (term in write.expr.terms) {
                                 val local = localByRef[term.offset] ?: error("Reference ${term.offset} not found")
-                                if (term.coefficient != 1) {
-                                    +"    movzx rdx, byte [rbp + $local]"
-                                    +"    imul rdx, ${term.coefficient}"
-                                    +"    add rax, rdx"
-                                } else {
-                                    +"    movzx rdx, byte [rbp + $local]"
-                                    +"    add rax, rdx"
-                                }
+                                +"    movzx rdx, byte [rbp + $local]"
+                                addScaled(term.coefficient)
                             }
                             +"    mov byte [rbx + ${write.offset}], al"
                         }
