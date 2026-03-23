@@ -11,7 +11,7 @@ enum class GP64 : Register {
 
     override val width = 64u
     override val code = ordinal.toUInt()
-    override fun toString() = name.lowercase()
+    override fun asString() = name.lowercase()
 }
 
 enum class GP32 : Register {
@@ -20,7 +20,7 @@ enum class GP32 : Register {
 
     override val width = 32u
     override val code = ordinal.toUInt()
-    override fun toString() = name.lowercase()
+    override fun asString() = name.lowercase()
 }
 
 enum class GP16 : Register {
@@ -29,7 +29,7 @@ enum class GP16 : Register {
 
     override val width = 16u
     override val code = ordinal.toUInt()
-    override fun toString() = name.lowercase()
+    override fun asString() = name.lowercase()
 }
 
 enum class GP8 : Register {
@@ -38,7 +38,7 @@ enum class GP8 : Register {
 
     override val width = 8u
     override val code = ordinal.toUInt()
-    override fun toString() = name.lowercase()
+    override fun asString() = name.lowercase()
 }
 
 // R8 and above require REX prefix

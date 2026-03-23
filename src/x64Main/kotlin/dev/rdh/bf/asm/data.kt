@@ -1,8 +1,12 @@
 package dev.rdh.bf.asm
 
-interface DataSource
+interface DataSource {
+    fun asString(): String
+}
 
-interface DataDestination
+interface DataDestination {
+    fun asString(): String
+}
 
 value class Immediate(val value: Long) : DataSource {
     constructor(value: Int) : this(value.toLong())
@@ -13,4 +17,6 @@ value class Immediate(val value: Long) : DataSource {
     constructor(value: UInt) : this(value.toLong())
     constructor(value: UShort) : this(value.toLong())
     constructor(value: UByte) : this(value.toLong())
+
+    override fun asString() = value.toString()
 }

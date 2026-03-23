@@ -1,5 +1,12 @@
 package dev.rdh.bf
 
+import dev.rdh.bf.asm.DataDestination
+import dev.rdh.bf.asm.GP32
+import dev.rdh.bf.asm.GP64
+import dev.rdh.bf.asm.GP8
+import dev.rdh.bf.asm.Immediate
+import dev.rdh.bf.asm.Memory
+import dev.rdh.bf.asm.Nasm
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.cstr
 import kotlinx.cinterop.toKString
@@ -9,86 +16,82 @@ object AffineNasmWriter : BfRunner {
     @OptIn(ExperimentalForeignApi::class)
     override fun compile(program: Iterable<BFOperation>): BfExecutable {
         val program = bfLowerAffine(program.toList())
-        val s = buildString {
-            fun addConst(dest: String, n: Int) {
-                if (n == 0) return
-                val op = if (n < 0) "sub" else "add"
-                +"    $op $dest, ${abs(n)}"
+
+        val s = Nasm {
+            fun addConst(dest: DataDestination, n: Int) {
+                if (n < 0) {
+                    sub(dest, Immediate(-n))
+                } else if (n > 0) {
+                    add(dest, Immediate(n))
+                }
             }
 
             fun addScaled(coefficient: Int) {
-                val c = abs(coefficient)
-                val op = if (coefficient < 0) "sub" else "add"
-                when (c) {
+                when (val c = abs(coefficient)) {
                     0 -> return
-                    2, 4, 8 -> +"    lea rdx, [rdx*$c]"
-                    3, 5, 9 -> +"    lea rdx, [rdx + rdx*${c - 1}]"
-                    else -> +"    imul rdx, $c"
+                    2, 4, 8 -> lea(GP64.RDX, Memory.qword(index = GP64.RDX, scale = c))
+                    3, 5, 9 -> lea(GP64.RDX, Memory.qword(GP64.RDX, GP64.RDX, scale = c - 1))
+                    else -> imul(GP64.RDX, GP64.RDX, Immediate(c))
                 }
-                +"    $op rax, rdx"
+                if (coefficient < 0) {
+                    sub(GP64.RAX, GP64.RDX)
+                } else {
+                    add(GP64.RAX, GP64.RDX)
+                }
             }
 
-            +"bits 64"
-            +"default rel"
+            mark("out")
+            lea(GP64.RSI, Memory.qword(GP64.RBX, GP64.RSI))
+            mov(GP32.EAX, Immediate(sys.write))
+            mov(GP32.EDI, Immediate(1)) // stdout
+            mov(GP32.EDX, Immediate(1)) // write 1 byte
+            syscall()
+            ret()
 
-            +"section .bss"
-            +"    tape: resb $TAPE_SIZE"
+            mark("in")
+            lea(GP64.RSI, Memory.qword(GP64.RBX, GP64.RSI))
+            mov(GP32.EAX, Immediate(sys.read))
+            mov(GP32.EDI, Immediate(0)) // stdin
+            mov(GP32.EDX, Immediate(1)) // read 1 byte
+            syscall()
+            ret()
 
-            +"section .text"
-            +"global _start"
-
-            +"out:"
-            +"    lea rsi, [rbx+rsi]"
-            +"    mov eax, ${sys.write}"
-            +"    mov edi, 1" // stdout
-            +"    mov edx, 1" // write 1 byte
-            +"    syscall"
-            +"    ret"
-
-            +"in:"
-            +"    lea rsi, [rbx+rsi]"
-            +"    mov eax, ${sys.read}"
-            +"    mov edi, 0" // stdin
-            +"    mov edx, 1" // read 1 byte
-            +"    syscall"
-            +"    ret"
-
-            +"_start:"
-            +"    lea rbx, [tape]"
-            +"    add rbx, ${TAPE_SIZE / 2}"
-            +"    mov rbp, rsp"
+            mark("_start")
+            addRaw("    lea rbx, [tape]")
+            add(GP64.RBX, Immediate(TAPE_SIZE / 2))
+            mov(GP64.RBP, GP64.RSP)
 
             var loopCounter = 0
 
             fun writeSeg(seg: BFAffineSegment) {
                 when (seg) {
                     is BFAffineInput -> {
-                        +"    mov rsi, ${seg.offset}"
-                        +"    call in"
+                        mov(GP64.RSI, Immediate(seg.offset))
+                        call("in")
                     }
                     is BFAffineOutput -> {
-                        +"    mov rsi, ${seg.offset}"
-                        +"    call out"
+                        mov(GP64.RSI, Immediate(seg.offset))
+                        call("out")
                     }
                     is BFAffineWriteBatch -> {
                         val localByRef = mutableMapOf<Int, Int>()
                         for ((i, ref) in seg.refs.withIndex()) {
-                            +"    dec rsp" // reserve space for one value
-                            +"    movzx rax, byte [rbx + ${ref}]" // load into rax
-                            +"    mov [rsp], al" // and store on stack
+                            dec(GP64.RSP) // reserve space for one value
+                            movzx(GP64.RAX, Memory.byte(GP64.RBX, displacement = ref.toLong())) // load into rax
+                            mov(Memory.byte(GP64.RSP), GP8.AL) // and store on stack
                             localByRef[ref] = -(i + 1) // offset from rbp
                         }
 
                         for (write in seg.writes) {
-                            +"    mov rax, ${write.expr.constant}"
+                            mov(GP64.RAX, Immediate(write.expr.constant))
                             for (term in write.expr.terms) {
                                 val local = localByRef[term.offset] ?: error("Reference ${term.offset} not found")
-                                +"    movzx rdx, byte [rbp + $local]"
+                                movzx(GP64.RDX, Memory.byte(GP64.RBP, displacement = local.toLong()))
                                 addScaled(term.coefficient)
                             }
-                            +"    mov byte [rbx + ${write.offset}], al"
+                            mov(Memory.byte(GP64.RBX, displacement = write.offset.toLong()), GP8.AL)
                         }
-                        +"    mov rsp, rbp"
+                        mov(GP64.RSP, GP64.RBP)
                     }
                 }
             }
@@ -96,22 +99,22 @@ object AffineNasmWriter : BfRunner {
             fun writeOp(op: BFAffineOp) {
                 when (op) {
                     is BFAffineBlock -> {
-                        addConst("rbx", op.baseShift)
+                        addConst(GP64.RBX, op.baseShift)
                         for (seg in op.segments) {
                             writeSeg(seg)
                         }
-                        addConst("rbx", op.pointerDelta - op.baseShift)
+                        addConst(GP64.RBX, op.pointerDelta - op.baseShift)
                     }
                     is BFAffineLoop -> {
                         val c = loopCounter++
-                        +"    jmp LC$c"
-                        +"L$c:"
+                        jmp("LC$c")
+                        mark("L$c")
                         for (op in op) {
                             writeOp(op)
                         }
-                        +"LC$c:"
-                        +"    cmp byte [rbx], 0"
-                        +"    jnz L$c"
+                        mark("LC$c")
+                        cmp(Memory.byte(GP64.RBX), Immediate(0))
+                        jne("L$c")
                     }
                 }
             }
@@ -120,30 +123,17 @@ object AffineNasmWriter : BfRunner {
                 writeOp(op)
             }
 
-            +"    mov rax, ${sys.exit}"
-            +"    mov rdi, 0"
-            +"    syscall"
+            mov(GP32.EAX, Immediate(sys.exit))
+            mov(GP64.RDI, Immediate(0))
+            syscall()
+
+            addRaw("section .bss")
+            addRaw("    tape: resb $TAPE_SIZE")
         }
 
-        val outfile = platform.posix.tmpnam(null)?.toKString() ?: error("Failed to create temp file")
-        val ofile = "$outfile.o"
-        val srcfile = "$outfile.nasm"
-        val fd = platform.posix.open(srcfile, platform.posix.O_RDWR or platform.posix.O_CREAT, 0b110_110_110) // rw-rw-rw-
-        if (fd == -1) error("Failed to open temp file")
-        platform.posix.write(fd, s.cstr, s.length.toULong())
-        platform.posix.close(fd)
-
-        platform.posix.system("nasm -fmacho64 $srcfile -o $ofile").let {
-            if (it != 0) error("Failed to assemble: $it")
-        }
-        platform.posix.system("ld -o $outfile $ofile -lSystem -syslibroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -e _start -arch x86_64 -platform_version macos 15.0.0 26.2").let {
-            if (it != 0) error("Failed to link: $it")
-        }
-
+        val (outfile, srcfile) = Nasm.compile(s)
 //        platform.posix.remove(srcfile)
         println("Generated assembly:\n$srcfile")
-        platform.posix.remove(ofile)
-
         return NativeExecutable(outfile)
     }
 }
