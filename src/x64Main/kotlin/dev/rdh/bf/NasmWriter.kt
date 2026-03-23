@@ -6,9 +6,6 @@ import kotlinx.cinterop.toKString
 import kotlin.math.abs
 
 object NasmWriter : BfRunner {
-    context(s: StringBuilder)
-    private operator fun String.unaryPlus() = s.appendLine(this)
-
     @OptIn(ExperimentalForeignApi::class)
     override fun compile(program: Iterable<BFOperation>): BfExecutable {
         val s = buildString {
