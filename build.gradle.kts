@@ -164,6 +164,8 @@ for (file in file("src/commonTest/resources").listFiles() ?: emptyArray()) {
                 file.absolutePath
             )
 
+            environment("BF_EXPORT", "1")
+
             jvmArgs(
                 "-server", "-Xmx3g", "-XX:+UseZGC",
                 "-XX:-DontCompileHugeMethods", "-XX:+UseCompactObjectHeaders",

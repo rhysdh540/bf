@@ -11,6 +11,7 @@ abstract class CommandLine {
     protected abstract val stderr: BfOutput
 
     protected abstract val nativeCodeType: String
+    protected abstract val systemRunner: BfRunner?
 
     private var compiled = false
     private var export = false
@@ -60,25 +61,20 @@ abstract class CommandLine {
     }
 
     private fun exec(literal: String) {
-        val prog = Parser.parse(literal)
-        val time = measureTime { Interpreter.run(prog, stdin, stdout) }
+        val program = Parser.parse(literal)
 
-//        val runner = if (compiled) {
-//            systemRunner(SystemRunnerOptions(overflowProtection = false, export = export))
-//        } else {
-//            InterpreterRunner
-//        }
-//
-//        var program = bfParse(literal)
-//        if (optimise)
-//            program = bfOptimise(program)
-//
-//        val (executable, cTime) = measureTimedValue { runner.compile(program) }
-//
-//        val time = measureTime { executable.run(stdin, stdout) }
-//
+        val runner = if (compiled) {
+            systemRunner ?: Interpreter
+        } else {
+            Interpreter
+        }
+
+        val (executable, cTime) = measureTimedValue { runner.compile(program, 1 shl 15) }
+
+        val time = measureTime { executable.run(stdin, stdout) }
+
         if (printTime) {
-//            stderr.write("Compile time: ${formatTime(cTime)}\n")
+            stderr.write("Compile time: ${formatTime(cTime)}\n")
             stderr.write("Execution time: ${formatTime(time)}\n")
         }
     }

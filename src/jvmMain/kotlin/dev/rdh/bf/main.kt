@@ -15,6 +15,7 @@ object Main : CommandLine() {
     override val stderr = System.err.bfOutput()
 
     override val nativeCodeType = "JVM bytecode"
+    override val systemRunner = Compiler
 
     @JvmStatic
     fun main(args: Array<String>) = run(args)
