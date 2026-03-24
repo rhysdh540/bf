@@ -152,7 +152,7 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
-for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
+for (file in file("src/commonTest/resources").listFiles() ?: emptyArray()) {
     if (file.isFile && file.extension == "b") {
         val name = file.nameWithoutExtension
 
@@ -160,8 +160,7 @@ for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
-                "--optimise", "--compile",
-                "--export", "--time",
+                "--compile", "--export", "--time",
                 file.absolutePath
             )
 

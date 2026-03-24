@@ -1,6 +1,5 @@
 package dev.rdh.bf
 
-import dev.rdh.bf.opt.bfOptimise
 import kotlin.time.measureTime
 import kotlin.time.measureTimedValue
 
@@ -15,7 +14,6 @@ abstract class CommandLine {
 
     private var compiled = false
     private var export = false
-    private var optimise = false
     private var printTime = false
     private var nextIsString = false
 
@@ -32,7 +30,6 @@ abstract class CommandLine {
                     stderr.write("\n               ${option.description}\n")
                 }
             },
-            Option("optimise", 'O', "Optimise the intermediate representation of the following programs") { optimise = true },
             Option("compile", 'c', "Compile the following programs to $nativeCodeType") { compiled = true },
             Option("interpret", 'i', "Run the following programs in interpreted mode (default)") { compiled = false },
             Option("export", 'E', "Export the following programs to a file in `.bf.out` (if --compiled)") { export = true },
@@ -63,22 +60,25 @@ abstract class CommandLine {
     }
 
     private fun exec(literal: String) {
-        val runner = if (compiled) {
-            systemRunner(SystemRunnerOptions(overflowProtection = false, export = export))
-        } else {
-            InterpreterRunner
-        }
+        val prog = Parser.parse(literal)
+        val time = measureTime { Interpreter.run(prog, stdin, stdout) }
 
-        var program = bfParse(literal)
-        if (optimise)
-            program = bfOptimise(program)
-
-        val (executable, cTime) = measureTimedValue { runner.compile(program) }
-
-        val time = measureTime { executable.run(stdin, stdout) }
-
+//        val runner = if (compiled) {
+//            systemRunner(SystemRunnerOptions(overflowProtection = false, export = export))
+//        } else {
+//            InterpreterRunner
+//        }
+//
+//        var program = bfParse(literal)
+//        if (optimise)
+//            program = bfOptimise(program)
+//
+//        val (executable, cTime) = measureTimedValue { runner.compile(program) }
+//
+//        val time = measureTime { executable.run(stdin, stdout) }
+//
         if (printTime) {
-            stderr.write("Compile time: ${formatTime(cTime)}\n")
+//            stderr.write("Compile time: ${formatTime(cTime)}\n")
             stderr.write("Execution time: ${formatTime(time)}\n")
         }
     }

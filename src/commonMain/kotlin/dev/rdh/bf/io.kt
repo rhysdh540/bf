@@ -15,23 +15,24 @@ fun interface BfOutput {
     }
 }
 
-class StringInput(private val data: String) : BfInput {
+class ByteInput(private val data: IntArray) : BfInput {
     private var pos = 0
 
     override fun readByte(): Int {
-        if (pos >= data.length) return -1
-        return data[pos++].code
+        if (pos >= data.size) return -1
+        return data[pos++]
     }
 }
 
-class StringOutput : BfOutput {
-    private val builder = StringBuilder()
+class ByteOutput : BfOutput {
+    private val buf = mutableListOf<Int>()
+
+    val bytes: List<Int>
+        get() = buf
 
     override fun writeByte(value: Int) {
-        builder.append(value.toChar())
+        buf.add(value)
     }
-
-    override fun toString(): String = builder.toString()
 }
 
 object NullInput : BfInput {
