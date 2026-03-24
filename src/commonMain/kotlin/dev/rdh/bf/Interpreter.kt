@@ -18,20 +18,26 @@ object Interpreter {
                     for (op in block.ops) {
                         when (op) {
                             is Input -> {
-                                val idx = n(ptr + op.offset)
-                                tape[idx] = input.readByte().toUByte()
+                                tape[n(ptr + op.offset)] = input.readByte().toUByte()
                             }
                             is Output -> {
-                                val idx = n(ptr + op.offset)
-                                output.writeByte(tape[idx].toInt())
+                                output.writeByte(tape[n(ptr + op.offset)].toInt())
                             }
                             is WriteBatch -> {
-                                val values = op.readOffsets.distinct().associateWith { tape[n(ptr + it)].toInt() }
-                                for (write in op.writes) {
-                                    val result = write.expr.constant + write.expr.terms.sumOf { t ->
-                                        t.coeff * t.offsets.map { values[it]!! }.fold(1) { a, b -> a * b }
+                                if (op.hasCycles) {
+                                    // cyclic: we need to capture a snapshot of all the cells we read from before we start writing
+                                    val snap = UByteArray(op.readOffsets.size)
+                                    for (i in snap.indices) {
+                                        snap[i] = tape[n(ptr + op.readOffsets[i])]
                                     }
-                                    tape[n(ptr + write.offset)] = result.toUByte()
+                                    for (write in op.writes) {
+                                        tape[n(ptr + write.offset)] = evalExpr(write.expr) { snap[op.snapshotIndex[it]!!] }.toUByte()
+                                    }
+                                } else {
+                                    // acyclic: just read directly from the tape as we go
+                                    for (write in op.writes) {
+                                        tape[n(ptr + write.offset)] = evalExpr(write.expr) { tape[n(ptr + it)] }.toUByte()
+                                    }
                                 }
                             }
                         }
@@ -47,6 +53,18 @@ object Interpreter {
         }
 
         return ptr
+    }
+
+    private inline fun evalExpr(expr: AffineExpr, accessor: (Int) -> UByte): Int {
+        var result = expr.constant
+        for (term in expr.terms) {
+            var product = term.coeff
+            for (offset in term.offsets) {
+                product *= accessor(offset).toInt()
+            }
+            result += product
+        }
+        return result
     }
 
     private fun n(idx: Int): Int {

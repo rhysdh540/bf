@@ -27,7 +27,41 @@ data class Input(val offset: Int) : BfOperation
 // perform all these writes in a row
 data class WriteBatch(val writes: List<Write>) : BfOperation {
     val readOffsets by lazy {
-        writes.flatMap { it.expr.terms.flatMap { it.offsets } }
+        writes.flatMap { it.expr.terms.flatMap { it.offsets } }.distinct().sorted()
+    }
+
+    /**
+     * does this batch read and write to the same cell, directly or indirectly?
+     * (is there a cycle in the write dependency graph?)
+     */
+    val hasCycles: Boolean by lazy {
+        val writeTargets = writes.map { it.offset }.toSet()
+        val visited = mutableSetOf<Int>()
+        val inStack = mutableSetOf<Int>()
+        val adj = writes.associate { w ->
+            w.offset to w.expr.terms
+                .flatMap { it.offsets }
+                .filter { it in writeTargets && it != w.offset }
+                .toSet()
+        }
+
+        fun dfs(node: Int): Boolean {
+            if (node in inStack) return true
+            if (node in visited) return false
+            visited += node
+            inStack += node
+            for (next in adj[node] ?: emptySet()) {
+                if (dfs(next)) return true
+            }
+            inStack -= node
+            return false
+        }
+
+        writeTargets.any { dfs(it) }
+    }
+
+    val snapshotIndex: Map<Int, Int> by lazy {
+        readOffsets.withIndex().associate { (i, off) -> off to i }
     }
 }
 
