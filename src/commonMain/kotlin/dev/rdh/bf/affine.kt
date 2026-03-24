@@ -192,10 +192,54 @@ private fun lowerLinearBlock(block: List<BFOperation>): BFAffineBlock? {
 
     fun resolve(offset: Int): MutableExpr = state[offset]?.copyExpr() ?: refExpr(offset)
 
+    fun orderWriteTargets(targets: List<Int>): List<Int> {
+        val targetSet = targets.toSet()
+        val outgoing = targets.associateWithTo(mutableMapOf()) { mutableSetOf<Int>() }
+        val indegree = targets.associateWithTo(mutableMapOf()) { 0 }
+
+        for (target in targets) {
+            val reads = state[target]!!.terms.entries
+                .asSequence()
+                .filter { it.value != 0 }
+                .map { it.key }
+                .filter { it in targetSet && it != target }
+                .toSet()
+
+            // target depends on old read, so emit target before the write that clobbers read
+            for (read in reads) {
+                if (outgoing[target]!!.add(read)) {
+                    indegree[read] = indegree[read]!! + 1
+                }
+            }
+        }
+
+        val ready = mutableSetOf<Int>() // TODO: use a priority queue or tree set
+        for (target in targets) {
+            if (indegree[target]!! == 0) ready += target
+        }
+
+        val ordered = mutableListOf<Int>()
+        while (ready.isNotEmpty()) {
+            val target = ready.minOrNull()!!
+            ready -= target
+            ordered += target
+            for (next in outgoing[target]!!) {
+                val nextInDegree = indegree[next]!! - 1
+                indegree[next] = nextInDegree
+                if (nextInDegree == 0) ready += next
+            }
+        }
+
+        if (ordered.size == targets.size) return ordered
+
+        val emitted = ordered.toSet()
+        return ordered + targets.filter { it !in emitted }
+    }
+
     fun flushState() {
         if (state.isEmpty()) return
 
-        val writes = state.keys.sorted().map { target ->
+        val writes = orderWriteTargets(state.keys.sorted()).map { target ->
             val expr = state[target]!!
             val terms = expr.terms.entries
                 .filter { it.value != 0 }

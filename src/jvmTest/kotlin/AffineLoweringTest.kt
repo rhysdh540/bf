@@ -72,14 +72,15 @@ class AffineLoweringTest {
 
         val block = assertIs<BFAffineBlock>(lowered.single())
         val batch = assertIs<BFAffineWriteBatch>(block.segments.single())
-        assertEquals(listOf(0, 1, 2), batch.writes.map(BFAffineWrite::offset))
+        val writeByOffset = batch.writes.associateBy(BFAffineWrite::offset)
+        assertEquals(setOf(0, 1, 2), writeByOffset.keys)
 
-        val write0 = batch.writes[0]
+        val write0 = writeByOffset[0]!!
         assertEquals(0, write0.expr.constant)
         assertTrue(write0.expr.terms.isEmpty())
 
-        val write1Terms = batch.writes[1].expr.terms.associate { it.offset to it.coefficient }
-        val write2Terms = batch.writes[2].expr.terms.associate { it.offset to it.coefficient }
+        val write1Terms = writeByOffset[1]!!.expr.terms.associate { it.offset to it.coefficient }
+        val write2Terms = writeByOffset[2]!!.expr.terms.associate { it.offset to it.coefficient }
         assertEquals(mapOf(0 to 1, 1 to 1), write1Terms)
         assertEquals(mapOf(0 to 1, 2 to 1), write2Terms)
     }
