@@ -165,22 +165,59 @@ fun bfCompile(program: Iterable<BFAffineOp>, opts: SystemRunnerOptions): (Reader
     }
 
     fun MethodVisitor.writeExpr(expr: BFAffineExpr, localByRef: Map<Int, LocalVar>) {
-        int(expr.constant)
-        for (term in expr.terms) {
-            if (term.coefficient == 0) continue
-            load(localByRef[term.offset] ?: error("Missing local for ref offset ${term.offset}"))
+        if (expr.constant != 0 || expr.terms.isEmpty()) {
+            int(expr.constant)
+        }
+
+        val liveTerms = expr.terms.filter { it.coefficient != 0 }
+        for ((i, term) in liveTerms.withIndex()) {
+            val local = localByRef[term.offset]
+            if (local != null) {
+                load(local)
+            } else {
+                loadCell(term.offset)
+            }
             if (term.coefficient.absoluteValue != 1) {
                 int(term.coefficient.absoluteValue)
                 imul
             }
-            if (term.coefficient > 0) iadd else isub
+            if (i != 0 || expr.constant != 0) {
+                if (term.coefficient > 0) iadd else isub
+            } else {
+                if (term.coefficient < 0) ineg
+            }
         }
     }
 
     fun MethodVisitor.writeSegment(segment: BFAffineSegment): Unit = when (segment) {
         is BFAffineWriteBatch -> {
+            val refUseCounts = mutableMapOf<Int, Int>()
+            for (write in segment.writes) {
+                for (term in write.expr.terms) {
+                    if (term.coefficient != 0) {
+                        refUseCounts[term.offset] = (refUseCounts[term.offset] ?: 0) + 1
+                    }
+                }
+            }
+
+            val refsToCache = mutableSetOf<Int>()
+            refsToCache += refUseCounts.filterValues { it > 1 }.keys
+
+            val written = mutableListOf<Int>()
+            for (write in segment.writes) {
+                for (term in write.expr.terms) {
+                    if (term.coefficient == 0 || term.offset in refsToCache) continue
+                    // if the term is used multiple times or will get overwritten later, cache it in a local variable
+                    // otherwise it's faster to just load it from the tape once
+                    if (written.any { it == term.offset }) {
+                        refsToCache += term.offset
+                    }
+                }
+                written += write.offset
+            }
+
             val localByRef = mutableMapOf<Int, LocalVar>()
-            for ((i, ref) in segment.refs.withIndex()) {
+            for ((i, ref) in refsToCache.withIndex()) {
                 val local = local<Int>(scratchBase + i)
                 localByRef[ref] = local
                 loadCell(ref)
