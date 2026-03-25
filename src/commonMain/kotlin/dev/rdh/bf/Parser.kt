@@ -2,6 +2,7 @@ package dev.rdh.bf
 
 import dev.rdh.bf.util.associateWithGuarantee
 import dev.rdh.bf.util.defaultMapOf
+import kotlin.text.iterator
 
 object Parser {
     fun parse(program: CharSequence): List<BfBlockOp> {
@@ -30,11 +31,10 @@ object Parser {
 
                     val list = opsStack.last()
                     if ((opsStack.size != 1 || list.isNotEmpty()) && list.lastOrNull() !is Loop) {
-                        val solved = trySolveLoop(loopBody)
-                        if (solved != null) {
-                            appendBlockIfNonEmpty(list, solved)
-                        } else {
-                            list += Loop(loopBody)
+                        when (val solved = trySolveLoop(loopBody)) {
+                            null -> list += Loop(loopBody)
+                            is Block -> appendBlockIfNonEmpty(list, solved)
+                            is Loop -> list += solved
                         }
                     }
 
@@ -111,17 +111,15 @@ object Parser {
 
     // region loop solving
 
-    /**
-     * try to solve a loop body into a single block
-     *
-     * a loop is solvable when:
-     *  - the body can reduce to a single effective block (so no other loops/io)
-     *  - the pointer returns to its initial position after each iteration
-     *  - the induction variable (cell 0) changes by a constant amount each iteration coprime to 256 (so that it'll eventually hit zero)
-     *  - all other per-iteration deltas only reference cells not modified by the loop
-     */
-    private fun trySolveLoop(body: List<BfBlockOp>): Block? {
-        // body must all be blocks
+    private class LoopAnalysis(
+        val merged: Block, // merged loop body
+        val writes: Map<Int, Write>, // offset -> write to that offset in the merged body (if any)
+        val deltas: Map<Int, AffineExpr>, // offset -> affine expression for the change to that offset per iteration, in terms of the original entry state
+        val inv: Int, // inverse mod 256 of the pointer delta per iteration
+        val iterations: AffineExpr
+    )
+
+    private fun analyze(body: List<BfBlockOp>): LoopAnalysis? {
         val blocks = body.filterIsInstance<Block>()
         if (blocks.size != body.size) return null
         val merged = mergeBlocks(blocks) ?: return null
@@ -129,7 +127,6 @@ object Parser {
 
         val batch = merged.ops.singleOrNull() as? WriteBatch ?: return null
         val writes = batch.writes.associateBy { it.offset }
-        val modifiedOffsets = writes.keys
 
         val inductionWrite = writes[0] ?: return null
         val inductionDelta = inductionWrite.expr - AffineExpr.cell(0)
@@ -138,26 +135,57 @@ object Parser {
         if (delta == 0) return null
 
         val inv = modInverse(-delta, 1 shl Byte.SIZE_BITS) ?: return null
+        val iterations = AffineExpr(terms = listOf(AffineExpr.Term(inv, setOf(0))))
 
-        // number of iterations: tape[0] * inv(-delta)
-        val tripCount = AffineExpr(terms = listOf(AffineExpr.Term(inv, setOf(0))))
-
-        // check all other deltas don't reference any modified cell
+        val deltas = mutableMapOf<Int, AffineExpr>()
         for ((offset, write) in writes) {
             if (offset == 0) continue
-            val d = write.expr - AffineExpr.cell(offset)
-            val refs = d.terms.flatMap { it.offsets }.toSet()
-            if (refs.any { it in modifiedOffsets }) return null
+            deltas[offset] = write.expr - AffineExpr.cell(offset)
         }
 
-        // it's solvable! so tape[0] becomes 0, and all other writes get added (delta * tripCount)
-        val resultWrites = mutableListOf<Write>()
-        resultWrites += Write(0, AffineExpr.const(0))
+        return LoopAnalysis(merged, writes, deltas, inv, iterations)
+    }
 
-        for ((offset, write) in writes) {
-            if (offset == 0) continue
-            val d = write.expr - AffineExpr.cell(offset)
-            resultWrites += Write(offset, AffineExpr.cell(offset) + d * tripCount)
+    private fun solvable(deltas: Map<Int, AffineExpr>, modifiedOffsets: Set<Int>): Boolean =
+        deltas.values.all { d -> d.terms.flatMap { it.offsets }.none { it in modifiedOffsets } }
+
+    /**
+     * propagate constant assignments through deltas until no new constants are discovered.
+     * returns the substituted deltas, or null if no constant cells exist (splitting can't help).
+     */
+    private fun propagateConstants(
+        writes: Map<Int, Write>,
+        deltas: Map<Int, AffineExpr>,
+    ): Map<Int, AffineExpr>? {
+        val constSubst = writes
+            .filter { (off, w) -> off != 0 && w.expr.isConstant }
+            .mapValuesTo(mutableMapOf()) { (_, w) -> w.expr }
+            .also { if (it.isEmpty()) return null }
+
+        var substituted = emptyMap<Int, AffineExpr>()
+        var changed = true
+        while (changed) {
+            changed = false
+            substituted = deltas.mapValues { (_, d) -> d.substitute(constSubst) }
+
+            for ((off, w) in writes) {
+                if (off == 0 || off in constSubst) continue
+                val simplifiedExpr = w.expr.substitute(constSubst)
+                if (simplifiedExpr.isConstant) {
+                    constSubst[off] = simplifiedExpr
+                    changed = true
+                }
+            }
+        }
+
+        return substituted
+    }
+
+    private fun buildSolved(deltas: Map<Int, AffineExpr>, iterations: AffineExpr): Block {
+        val resultWrites = mutableListOf(Write(0, AffineExpr.ZERO))
+
+        for ((offset, d) in deltas.filter { it != AffineExpr.ZERO }) {
+            resultWrites += Write(offset, AffineExpr.cell(offset) + d * iterations)
         }
 
         return Block(
@@ -165,6 +193,39 @@ object Parser {
             ops = listOf(WriteBatch(orderWrites(resultWrites))),
             workingOffset = 0,
         )
+    }
+
+    private fun trySolveLoop(body: List<BfBlockOp>): BfBlockOp? {
+        val analysis = analyze(body) ?: return null
+        val modifiedOffsets = analysis.writes.keys
+
+        if (solvable(analysis.deltas, modifiedOffsets)) {
+            return buildSolved(analysis.deltas, analysis.iterations)
+        }
+
+        return trySplitSolve(analysis, modifiedOffsets)
+    }
+
+    /**
+     * split the first iteration and try to solve the remainder with constant-propagated deltas
+     *
+     * result is a Loop that executes at most once, since the first block runs one iteration with
+     * the original (unknown) cell values, and the second block solves the remaining iterations
+     * using constants given by the first iteration. the loop exits because the solved block zeroes tape[0].
+     */
+    private fun trySplitSolve(analysis: LoopAnalysis, modifiedOffsets: Set<Int>): Loop? {
+        val substituted = propagateConstants(analysis.writes, analysis.deltas) ?: return null
+
+        val effectivelyModified = modifiedOffsets
+            .filterTo(mutableSetOf()) { off -> off == 0 || substituted[off] != AffineExpr.ZERO }
+
+        if (!solvable(substituted, effectivelyModified)) return null
+
+        val split = Block(pointerDelta = 0, ops = analysis.merged.ops, workingOffset = 0)
+        val remainderIterations = AffineExpr(terms = listOf(AffineExpr.Term(analysis.inv, setOf(0))))
+        val solvedRemainder = buildSolved(substituted, remainderIterations)
+
+        return Loop(body = listOf(split, solvedRemainder))
     }
 
     private fun mergeBlocks(blocks: List<Block>): Block? {
@@ -251,7 +312,7 @@ object Parser {
             val target = ready.removeFirst()
             ordered += target
             for (next in outgoing[target]) {
-                if (indegree[next]-- == 0) {
+                if (--indegree[next] == 0) {
                     val idx = ready.binarySearch(next).let { if (it < 0) -(it + 1) else it }
                     ready.add(idx, next)
                 }
