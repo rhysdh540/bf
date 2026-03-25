@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+    <title>bf</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+        const { origin, pathname, search, hash } = window.location;
+        if (pathname.length > 1 && pathname.endsWith("/")) {
+            const base = document.createElement("base");
+            base.href = origin + pathname;
+            document.head.appendChild(base);
+            const noSlash = pathname.slice(0, -1);
+            window.history.replaceState({}, document.title, noSlash + search + hash);
+        }
+    </script>
+    <link rel="stylesheet" href="https://rdh540.dev/style.css" crossorigin="anonymous">
+    <script src="coi-serviceworker.js"></script>
+</head>
+<body style="display: flex; flex-direction: column; gap: 0.25em; padding: 0.5em; box-sizing: border-box; height: 100vh">
+<div id="input-row" style="display: flex; align-items: flex-end; width: 100%; min-width: 0">
+    <textarea id="code" rows="10" readonly style="box-sizing: border-box; flex: 1 1 auto; min-width: 10em; margin: 0; resize: vertical"></textarea>
+    <div id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize code and input panes" tabindex="0" style="box-sizing: border-box; flex: 0 0 0.625rem; align-self: stretch; margin: 0; cursor: col-resize; background: 0"></div>
+    <textarea id="input" rows="10" placeholder="Input" style="box-sizing: border-box; flex: 0 0 20em; min-width: 10em; margin: 0; resize: vertical"></textarea>
+</div>
+<div id="ctrls" style="display: flex; align-items: center; gap: 1em">
+    <button id="run" disabled>Run</button>
+    <button id="export" disabled>Export</button>
+    <small id="status" style="position: absolute; right: 1em"></small>
+</div>
+<textarea id="output" readonly style="width: 100%; resize: none; flex: 1"></textarea>
+<script type="module" src="import.js"></script>
+<script type="module" src="layout.js"></script>
+<script type="module" src="runner.js"></script>
+</body>
+</html>
