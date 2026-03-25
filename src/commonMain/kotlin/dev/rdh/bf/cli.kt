@@ -3,12 +3,15 @@ package dev.rdh.bf
 import kotlin.time.measureTime
 import kotlin.time.measureTimedValue
 
+private const val DEFAULT_TAPE_SIZE = 1 shl 15
+
 abstract class CommandLine {
     protected abstract fun readFile(path: String): String
 
     protected abstract val stdin: BfInput
     protected abstract val stdout: BfOutput
     protected abstract val stderr: BfOutput
+    protected abstract fun exit(code: Int): Nothing
 
     protected abstract val nativeCodeType: String
     protected abstract val systemRunner: BfRunner?
@@ -17,9 +20,10 @@ abstract class CommandLine {
     private var export = false
     private var printTime = false
     private var nextIsString = false
+    private var tapeSize = DEFAULT_TAPE_SIZE
 
     private val options: List<Option> by lazy {
-        listOf(
+        listOfNotNull(
             Option("help", 'h', "Show this help message") {
                 stderr.write("Usage: bf [options] <program.b>\n")
                 stderr.write("Options:\n")
@@ -31,18 +35,33 @@ abstract class CommandLine {
                     stderr.write("\n               ${option.description}\n")
                 }
             },
-            Option("compile", 'c', "Compile the following programs to $nativeCodeType") { compiled = true },
-            Option("interpret", 'i', "Run the following programs in interpreted mode (default)") { compiled = false },
-            Option("export", 'E', "Export the following programs to a file in `.bf.out` (if --compiled)") { export = true },
-            Option("no-export", null, "Do not export the following programs") { export = false },
-            Option("time", 't', "Print the time taken to execute the following programs") { printTime = true },
-            Option("eval", 'e', "Evaluate the next argument directly as a Brainfuck program") { nextIsString = true }
+            Option("compile", 'c', "if true, compile the following programs to $nativeCodeType; else run in interpreted mode (default)") {
+                compiled = it?.let { truthy(it) } ?: true
+            }.takeIf { systemRunner != null },
+            Option("export", 'E', "Export the following programs to a file under `.bf.out` (if --compiled=true)") {
+                export = it?.let { truthy(it) } ?: true
+            }.takeIf { systemRunner != null },
+            Option("tape-size", 's', "Set the tape size for the following programs (default: $DEFAULT_TAPE_SIZE)") {
+                tapeSize = it?.toIntOrNull() ?: run {
+                    stderr.write("Invalid tape size: $it\n")
+                    exit(1)
+                }
+            },
+            Option("time", 't', "Print the time taken to execute the following programs") {
+                printTime = it?.let { truthy(it) } ?: true
+            },
+            Option("eval", 'e', "Evaluate the next argument directly as a Brainfuck program") {
+                if (it != null) {
+                    stderr.write("Warning: --eval does not take an argument, ignoring '$it'\n")
+                }
+                nextIsString = true
+            }
         )
     }
 
     fun run(args: Array<String>) {
         if (args.isEmpty()) {
-            options.first { it.name == "help" }.action()
+            options.first { it.name == "help" }.action(null)
             return
         }
         for (arg in args) {
@@ -56,6 +75,17 @@ abstract class CommandLine {
                 continue
             }
 
+            if (arg.getOrNull(0) == '-' && arg.length > 2) {
+                var found = false
+                for (inner in arg.drop(1)) {
+                    if (options.any { it.evaluate("-$inner") }) {
+                        found = true
+                    }
+                }
+
+                if (found) continue
+            }
+
             exec(readFile(arg))
         }
     }
@@ -63,11 +93,7 @@ abstract class CommandLine {
     private fun exec(literal: String) {
         val program = Parser.parse(literal)
 
-        val runner = if (compiled) {
-            systemRunner ?: Interpreter
-        } else {
-            Interpreter
-        }
+        val runner = if (compiled) systemRunner!! else Interpreter
 
         val (executable, cTime) = measureTimedValue { runner.compile(program, 1 shl 15) }
 
@@ -88,17 +114,22 @@ abstract class CommandLine {
             "${milliseconds}ms"
         }
     }
+
+    private fun truthy(s: String): Boolean {
+        return s.lowercase() in setOf("true", "1", "yes", "y", "on")
+    }
 }
 
 private data class Option(
     val name: String,
     val short: Char?,
     val description: String,
-    val action: () -> Unit
+    val action: (String?) -> Unit
 ) {
     fun evaluate(arg: String): Boolean {
-        if (arg == "--$name" || (short != null && arg == "-$short")) {
-            action()
+        val parts = arg.split('=', limit = 2)
+        if (parts[0] == "--$name" || (short != null && parts[0] == "-$short")) {
+            action(parts.getOrNull(1))
             return true
         }
         return false
