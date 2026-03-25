@@ -28,11 +28,14 @@ object Parser {
                     loopOpenIndices.removeLast()
                     val loopBody = opsStack.removeLast()
 
-                    val solved = trySolveLoop(loopBody)
-                    if (solved != null) {
-                        appendBlockIfNonEmpty(opsStack.last(), solved)
-                    } else {
-                        opsStack.last() += Loop(loopBody)
+                    val list = opsStack.last()
+                    if ((opsStack.size != 1 || list.isNotEmpty()) && list.lastOrNull() !is Loop) {
+                        val solved = trySolveLoop(loopBody)
+                        if (solved != null) {
+                            appendBlockIfNonEmpty(list, solved)
+                        } else {
+                            list += Loop(loopBody)
+                        }
                     }
 
                     blockStarts[blockStarts.lastIndex] = i + 1
@@ -51,9 +54,19 @@ object Parser {
     }
 
     private fun appendBlockIfNonEmpty(ops: MutableList<BfBlockOp>, block: Block) {
-        if (block.pointerDelta != 0 || block.ops.isNotEmpty()) {
-            ops += block
+        if (block.pointerDelta == 0 && block.ops.isEmpty()) return
+
+        // try to merge with the previous block
+        val prev = ops.lastOrNull()
+        if (prev is Block) {
+            val merged = mergeBlocks(listOf(prev, block))
+            if (merged != null) {
+                ops[ops.lastIndex] = merged
+                return
+            }
         }
+
+        ops += block
     }
 
     private fun parseBlock(block: CharSequence): Block {
@@ -209,7 +222,7 @@ object Parser {
 
     /**
      * topologically order writes so that a reads from any cell come before the write to that cell, if possible.
-     * this lets backends void needing to allocate temporary locals for reads.
+     * this lets backends avoid needing to allocate temporary locals for reads.
      */
     private fun orderWrites(writes: List<Write>): List<Write> {
         if (writes.size <= 1) return writes
