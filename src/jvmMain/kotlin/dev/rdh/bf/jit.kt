@@ -153,16 +153,17 @@ object Compiler : BfRunner {
             }
         }
 
-        fun MethodVisitor.writeSegment(segment: BfOperation): Unit = when (segment) {
-            is WriteBatch -> {
+        fun MethodVisitor.writeBlock(block: BfBlockOp): Unit = when (block) {
+            is WriteBlock -> {
+                shiftPointer(block.workingOffset)
+
                 val refsToCache = mutableSetOf<Int>()
                 val refsUsed = mutableSetOf<Int>()
                 val written = mutableSetOf<Int>()
-                for (write in segment.writes) {
+                for (write in block.writes) {
                     for (term in write.expr.terms) {
                         if (term.coeff == 0) continue
                         for (off in term.offsets) {
-                            // if the offset will get overwritten later, cache it in a local variable
                             if ((off !in refsToCache && off in written) || !refsUsed.add(off)) {
                                 refsToCache += off
                             }
@@ -179,40 +180,36 @@ object Compiler : BfRunner {
                     store(local)
                 }
 
-                for (write in segment.writes) {
+                for (write in block.writes) {
                     load(tape)
                     load(pointer)
                     addOffset(write.offset)
                     writeExpr(write.expr, localByRef)
                     bastore
                 }
-            }
 
-            is Output -> {
-                load(output)
-                loadCell(segment.offset)
-                int(0xFF)
-                iand
-                invokevirtual<Writer>("write", desc<Void>(type<Int>()))
-            }
-
-            is Input -> {
-                load(tape)
-                load(pointer)
-                addOffset(segment.offset)
-                load(input)
-                invokevirtual<Reader>("read", desc<Int>())
-                bastore
-            }
-        }
-
-        fun MethodVisitor.writeBlock(block: BfBlockOp): Unit = when (block) {
-            is Block -> {
-                shiftPointer(block.workingOffset)
-                for (segment in block.ops) {
-                    writeSegment(segment)
-                }
                 shiftPointer(block.pointerDelta - block.workingOffset)
+            }
+
+            is IOBlock -> {
+                for (op in block.ops) {
+                    when (op) {
+                        is Output -> {
+                            load(output)
+                            writeExpr(op.expr, emptyMap())
+                            invokevirtual<Writer>("write", desc<Void>(type<Int>()))
+                        }
+                        is Input -> {
+                            load(tape)
+                            load(pointer)
+                            addOffset(op.offset)
+                            load(input)
+                            invokevirtual<Reader>("read", desc<Int>())
+                            bastore
+                        }
+                    }
+                }
+                shiftPointer(block.pointerDelta)
             }
 
             is Loop -> {

@@ -168,77 +168,74 @@ object Compiler : BfRunner {
             return result ?: m.i32.const(0)
         }
 
-        fun lowerBlock(block: Block): List<BinaryenExprRef> {
+        fun shiftPointer(delta: Int): BinaryenExprRef? {
+            if (delta == 0) return null
+            return m.local.set(ptr, m.i32.add(ptrGet(), m.i32.const(delta)))
+        }
+
+        fun lowerWriteBlock(block: WriteBlock): List<BinaryenExprRef> {
             val result = mutableListOf<BinaryenExprRef>()
 
             if (block.workingOffset != 0) {
-                result += m.local.set(
-                    ptr,
-                    m.i32.add(ptrGet(), m.i32.const(block.workingOffset)),
-                )
+                result += m.local.set(ptr, m.i32.add(ptrGet(), m.i32.const(block.workingOffset)))
             }
 
-            for (segment in block.ops) {
-                when (segment) {
-                    is Output -> {
-                        result += m.call(
-                            "write",
-                            listOf(load(segment.offset)),
-                            ns.none,
-                        )
-                    }
-
-                    is Input -> {
-                        result += store(
-                            offset = segment.offset,
-                            value = m.call("read", emptyList(), ns.i32),
-                        )
-                    }
-
-                    is WriteBatch -> {
-                        val refsToCache = mutableSetOf<Int>()
-                        val refsUsed = mutableSetOf<Int>()
-                        val written = mutableSetOf<Int>()
-                        for (write in segment.writes) {
-                            for (term in write.expr.terms) {
-                                if (term.coeff == 0) continue
-                                for (off in term.offsets) {
-                                    // if the offset will get overwritten later, cache it in a local variable
-                                    if ((off !in refsToCache && off in written) || !refsUsed.add(off)) {
-                                        refsToCache += off
-                                    }
-                                }
-                            }
-                            written += write.offset
-                        }
-
-                        val localByRef = mutableMapOf<Int, Int>()
-                        for ((i, ref) in refsToCache.withIndex()) {
-                            localByRef[ref] = scratchBase + i
-                            result += m.local.set(
-                                scratchBase + i,
-                                load(ref),
-                            )
-                        }
-                        maxScratchLocals = maxOf(maxScratchLocals, refsToCache.size)
-
-                        for (write in segment.writes) {
-                            result += store(
-                                offset = write.offset,
-                                value = exprToWasm(write.expr, localByRef),
-                            )
+            val refsToCache = mutableSetOf<Int>()
+            val refsUsed = mutableSetOf<Int>()
+            val written = mutableSetOf<Int>()
+            for (write in block.writes) {
+                for (term in write.expr.terms) {
+                    if (term.coeff == 0) continue
+                    for (off in term.offsets) {
+                        if ((off !in refsToCache && off in written) || !refsUsed.add(off)) {
+                            refsToCache += off
                         }
                     }
                 }
+                written += write.offset
+            }
+
+            val localByRef = mutableMapOf<Int, Int>()
+            for ((i, ref) in refsToCache.withIndex()) {
+                localByRef[ref] = scratchBase + i
+                result += m.local.set(scratchBase + i, load(ref))
+            }
+            maxScratchLocals = maxOf(maxScratchLocals, refsToCache.size)
+
+            for (write in block.writes) {
+                result += store(
+                    offset = write.offset,
+                    value = exprToWasm(write.expr, localByRef),
+                )
             }
 
             val trailingShift = block.pointerDelta - block.workingOffset
-            if (trailingShift != 0) {
-                result += m.local.set(
-                    ptr,
-                    m.i32.add(ptrGet(), m.i32.const(trailingShift)),
-                )
+            shiftPointer(trailingShift)?.let { result += it }
+
+            return result
+        }
+
+        fun lowerIOBlock(block: IOBlock): List<BinaryenExprRef> {
+            val result = mutableListOf<BinaryenExprRef>()
+
+            for (op in block.ops) {
+                result += when (op) {
+                    is Output -> m.call(
+                        "write",
+                        listOf(
+                            exprToWasm(op.expr, emptyMap())
+                        ),
+                        ns.none
+                    )
+
+                    is Input -> store(
+                        offset = op.offset,
+                        value = m.call("read", emptyList(), ns.i32)
+                    )
+                }
             }
+
+            shiftPointer(block.pointerDelta)?.let { result += it }
 
             return result
         }
@@ -248,9 +245,8 @@ object Compiler : BfRunner {
 
             for (op in loweredOps) {
                 when (op) {
-                    is Block -> {
-                        result += lowerBlock(op)
-                    }
+                    is WriteBlock -> result += lowerWriteBlock(op)
+                    is IOBlock -> result += lowerIOBlock(op)
 
                     is Loop -> {
                         val id = nLoops++

@@ -13,7 +13,7 @@ object Parser {
         for (i in 0 until program.length) {
             when (program[i]) {
                 '[' -> {
-                    appendBlockIfNonEmpty(opsStack.last(), parseBlock(program.subSequence(blockStarts.last(), i)))
+                    appendBlocks(opsStack.last(), parseBlock(program.subSequence(blockStarts.last(), i)))
                     opsStack.add(mutableListOf())
                     blockStarts.add(i + 1)
                     loopOpenIndices.add(i)
@@ -24,7 +24,7 @@ object Parser {
                         error("Unmatched ']' at index $i")
                     }
 
-                    appendBlockIfNonEmpty(opsStack.last(), parseBlock(program.subSequence(blockStarts.last(), i)))
+                    appendBlocks(opsStack.last(), parseBlock(program.subSequence(blockStarts.last(), i)))
                     blockStarts.removeLast()
                     loopOpenIndices.removeLast()
                     val loopBody = opsStack.removeLast()
@@ -32,9 +32,10 @@ object Parser {
                     val list = opsStack.last()
                     if ((opsStack.size != 1 || list.isNotEmpty()) && list.lastOrNull() !is Loop) {
                         when (val solved = trySolveLoop(loopBody)) {
-                            is Block -> appendBlockIfNonEmpty(list, solved)
+                            is WriteBlock -> appendBlocks(list, listOf(solved))
                             is Loop -> list += solved
                             null -> list += Loop(loopBody)
+                            else -> list += Loop(loopBody)
                         }
                     }
 
@@ -49,29 +50,29 @@ object Parser {
         }
 
         val out = opsStack.single()
-        appendBlockIfNonEmpty(out, parseBlock(program.subSequence(blockStarts.single(), program.length)))
+        appendBlocks(out, parseBlock(program.subSequence(blockStarts.single(), program.length)))
         return out
     }
 
-    private fun appendBlockIfNonEmpty(ops: MutableList<BfBlockOp>, block: Block) {
-        if (block.pointerDelta == 0 && block.ops.isEmpty()) return
-
-        // try to merge with the previous block
-        val prev = ops.lastOrNull()
-        if (prev is Block) {
-            val merged = mergeBlocks(listOf(prev, block))
-            if (merged != null) {
-                ops[ops.lastIndex] = merged
-                return
-            }
+    private fun appendBlocks(ops: MutableList<BfBlockOp>, newBlocks: List<BfBlockOp>) {
+        val filtered = newBlocks.filter {
+            !(it is WriteBlock && it.writes.isEmpty() && it.pointerDelta == 0)
         }
+        if (filtered.isEmpty()) return
 
-        ops += block
+        val prev = ops.lastOrNull()
+        if (prev != null && prev !is Loop) {
+            val merged = mergeBlocks(listOf(prev) + filtered)
+            ops.removeLast()
+            ops.addAll(merged)
+        } else {
+            ops.addAll(filtered)
+        }
     }
 
-    private fun parseBlock(block: CharSequence): Block {
+    private fun parseBlock(block: CharSequence): List<BfBlockOp> {
         var offset = 0
-        val ops = mutableListOf<BfOperation>()
+        val result = mutableListOf<BfBlockOp>()
         val writeDeltas = defaultMapOf<Int, Int> { 0 }
 
         fun flushWrites() {
@@ -80,9 +81,18 @@ object Parser {
                     Write(targetOffset, AffineExpr(constant = delta, listOf(AffineExpr.Term(1, setOf(targetOffset)))))
                 }
                 if (writes.isNotEmpty()) {
-                    ops += WriteBatch(writes)
+                    result += WriteBlock(0, writes, 0)
                 }
                 writeDeltas.clear()
+            }
+        }
+
+        fun appendIO(op: BfIOOp) {
+            val last = result.lastOrNull()
+            if (last is IOBlock) {
+                result[result.lastIndex] = IOBlock(0, last.ops + op)
+            } else {
+                result += IOBlock(0, listOf(op))
             }
         }
 
@@ -92,11 +102,11 @@ object Parser {
                 '<' -> offset--
                 '.' -> {
                     flushWrites()
-                    ops += Output(offset)
+                    appendIO(Output(AffineExpr.cell(offset)))
                 }
                 ',' -> {
                     flushWrites()
-                    ops += Input(offset)
+                    appendIO(Input(offset))
                 }
                 '+' -> writeDeltas[offset]++
                 '-' -> writeDeltas[offset]--
@@ -106,27 +116,42 @@ object Parser {
 
         flushWrites()
 
-        return Block(pointerDelta = offset, ops, workingOffset = 0)
+        // put pointer delta on the last block
+        if (offset != 0) {
+            if (result.isNotEmpty()) {
+                val last = result.last()
+                result[result.lastIndex] = when (last) {
+                    is WriteBlock -> last.copy(pointerDelta = offset)
+                    is IOBlock -> last.copy(pointerDelta = offset)
+                    else -> error("unexpected block type in parseBlock result")
+                }
+            } else {
+                result += WriteBlock(offset, emptyList(), 0)
+            }
+        }
+
+        return result
     }
 
     // region loop solving
 
     private class LoopAnalysis(
-        val merged: Block, // merged loop body
-        val writes: Map<Int, Write>, // offset -> write to that offset in the merged body (if any)
-        val deltas: Map<Int, AffineExpr>, // offset -> affine expression for the change to that offset per iteration, in terms of the original entry state
-        val inv: Int, // inverse mod 256 of the pointer delta per iteration
+        val merged: WriteBlock,
+        val writes: Map<Int, Write>,
+        val deltas: Map<Int, AffineExpr>,
+        val inv: Int,
         val iterations: AffineExpr
     )
 
     private fun analyze(body: List<BfBlockOp>): LoopAnalysis? {
-        val blocks = body.filterIsInstance<Block>()
-        if (blocks.size != body.size) return null
-        val merged = mergeBlocks(blocks) ?: return null
-        if (merged.pointerDelta != 0) return null
+        if (body.any { it !is WriteBlock }) return null
 
-        val batch = merged.ops.singleOrNull() as? WriteBatch ?: return null
-        val writes = batch.writes.associateBy { it.offset }
+        val merged = mergeBlocks(body)
+        if (merged.size != 1) return null
+        val writeBlock = merged.single() as? WriteBlock ?: return null
+        if (writeBlock.pointerDelta != 0) return null
+
+        val writes = writeBlock.writes.associateBy { it.offset }
 
         val inductionWrite = writes[0] ?: return null
         val inductionDelta = inductionWrite.expr - AffineExpr.cell(0)
@@ -141,7 +166,7 @@ object Parser {
             deltas[offset] = write.expr - AffineExpr.cell(offset)
         }
 
-        return LoopAnalysis(merged, writes, deltas, inv, iterations)
+        return LoopAnalysis(writeBlock, writes, deltas, inv, iterations)
     }
 
     private fun solvable(deltas: Map<Int, AffineExpr>, modifiedOffsets: Set<Int>): Boolean =
@@ -179,16 +204,16 @@ object Parser {
         return substituted
     }
 
-    private fun buildSolved(deltas: Map<Int, AffineExpr>, iterations: AffineExpr): Block {
+    private fun buildSolved(deltas: Map<Int, AffineExpr>, iterations: AffineExpr): WriteBlock {
         val resultWrites = mutableListOf(Write(0, AffineExpr.ZERO))
 
         for ((offset, d) in deltas.filterValues { it != AffineExpr.ZERO }) {
             resultWrites += Write(offset, AffineExpr.cell(offset) + d * iterations)
         }
 
-        return Block(
+        return WriteBlock(
             pointerDelta = 0,
-            ops = listOf(WriteBatch(orderWrites(resultWrites))),
+            writes = orderWrites(resultWrites),
             workingOffset = 0,
         )
     }
@@ -219,60 +244,85 @@ object Parser {
 
         if (!solvable(substituted, effectivelyModified)) return null
 
-        val split = Block(pointerDelta = 0, ops = analysis.merged.ops, workingOffset = 0)
+        val split = analysis.merged.copy(pointerDelta = 0, workingOffset = 0)
         val remainderIterations = AffineExpr(terms = listOf(AffineExpr.Term(analysis.inv, setOf(0))))
         val solvedRemainder = buildSolved(substituted, remainderIterations)
 
         return Loop(body = listOf(split, solvedRemainder))
     }
 
-    private fun mergeBlocks(blocks: List<Block>): Block? {
-        if (blocks.isEmpty()) return null
-        if (blocks.size == 1) return blocks[0]
+    private fun mergeBlocks(blocks: List<BfBlockOp>): List<BfBlockOp> {
+        if (blocks.isEmpty()) return emptyList()
+        if (blocks.size == 1) return blocks
 
         var ptrOffset = 0
         // offset -> expression, in terms of the original entry state
         val state = mutableMapOf<Int, AffineExpr>()
+        val ioOps = mutableListOf<BfIOOp>()
 
         for (block in blocks) {
-            val base = ptrOffset + block.workingOffset
+            when (block) {
+                is WriteBlock -> {
+                    val base = ptrOffset + block.workingOffset
 
-            for (op in block.ops) {
-                when (op) {
-                    is WriteBatch -> {
-                        // all reads in this batch see pre-batch state
-                        val snap = state.toMap()
-                        fun snapResolve(abs: Int): AffineExpr = snap[abs] ?: AffineExpr.cell(abs)
+                    // all reads in this batch see pre-batch state
+                    val snap = state.toMap()
+                    fun snapResolve(abs: Int): AffineExpr = snap[abs] ?: AffineExpr.cell(abs)
 
-                        for (write in op.writes) {
-                            val absTarget = base + write.offset
-                            val mapping = write.expr.terms
-                                .flatMap { it.offsets }
-                                .distinct()
-                                .associateWith { relOff -> snapResolve(base + relOff) }
-                            state[absTarget] = write.expr.substitute(mapping)
+                    for (write in block.writes) {
+                        val absTarget = base + write.offset
+                        val mapping = write.expr.terms
+                            .flatMap { it.offsets }
+                            .distinct()
+                            .associateWith { relOff -> snapResolve(base + relOff) }
+                        state[absTarget] = write.expr.substitute(mapping)
+                    }
+
+                    ptrOffset += block.pointerDelta
+                }
+                is IOBlock -> {
+                    val base = ptrOffset
+
+                    for (op in block.ops) {
+                        when (op) {
+                            is Output -> {
+                                val mapping = op.expr.terms
+                                    .flatMap { it.offsets }
+                                    .distinct()
+                                    .associateWith { relOff -> state[base + relOff] ?: AffineExpr.cell(base + relOff) }
+                                ioOps += Output(op.expr.substitute(mapping))
+                            }
+                            is Input -> {
+                                val absOffset = base + op.offset
+                                ioOps += Input(absOffset)
+                                // input overwrites the cell with an unknown value; reset to identity
+                                state[absOffset] = AffineExpr.cell(absOffset)
+                            }
                         }
                     }
-                    else -> return null // can't merge across io
-                }
-            }
 
-            ptrOffset += block.pointerDelta
+                    ptrOffset += block.pointerDelta
+                }
+                is Loop -> error("cannot merge across loops")
+            }
         }
 
         val writes = state
             .filter { (offset, expr) -> expr != AffineExpr.cell(offset) }
             .map { (offset, expr) -> Write(offset, expr) }
 
-        val ops = if (writes.isNotEmpty())
-            listOf(WriteBatch(orderWrites(writes)))
-        else emptyList()
+        val result = mutableListOf<BfBlockOp>()
 
-        return Block(
-            pointerDelta = ptrOffset,
-            ops = ops,
-            workingOffset = 0,
-        )
+        if (ioOps.isNotEmpty() && writes.isNotEmpty()) {
+            result += IOBlock(0, ioOps)
+            result += WriteBlock(ptrOffset, orderWrites(writes), 0)
+        } else if (ioOps.isNotEmpty()) {
+            result += IOBlock(ptrOffset, ioOps)
+        } else if (writes.isNotEmpty() || ptrOffset != 0) {
+            result += WriteBlock(ptrOffset, if (writes.isNotEmpty()) orderWrites(writes) else emptyList(), 0)
+        }
+
+        return result
     }
 
     // endregion

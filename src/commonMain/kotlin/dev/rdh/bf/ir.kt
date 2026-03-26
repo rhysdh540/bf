@@ -5,33 +5,19 @@ import dev.rdh.bf.util.defaultMapOf
 sealed interface BfBlockOp
 
 /**
- * move pointer by [workingOffset], run all of [ops], move by `pointerDelta - workingOffset`
+ * move pointer by [workingOffset], perform all [writes], move by `pointerDelta - workingOffset`
  */
-data class Block(
+data class WriteBlock(
     val pointerDelta: Int,
-    val ops: List<BfOperation>,
-    val workingOffset: Int
-) : BfBlockOp
-
-/**
- * run body while `tape[ptr] != 0`
- */
-data class Loop(val body: List<BfBlockOp>) : BfBlockOp
-
-sealed interface BfOperation
-
-// write out/read in to tape[ptr + offset]
-data class Output(val offset: Int) : BfOperation
-data class Input(val offset: Int) : BfOperation
-
-// perform all these writes in a row
-data class WriteBatch(val writes: List<Write>) : BfOperation {
+    val writes: List<Write>,
+    val workingOffset: Int,
+) : BfBlockOp {
     val readOffsets by lazy {
         writes.flatMap { it.expr.terms.flatMap { it.offsets } }.distinct().sorted()
     }
 
     /**
-     * does this batch read and write to the same cell, directly or indirectly?
+     * does this block read and write to the same cell, directly or indirectly?
      * (is there a cycle in the write dependency graph?)
      */
     val hasCycles: Boolean by lazy {
@@ -64,6 +50,21 @@ data class WriteBatch(val writes: List<Write>) : BfOperation {
         readOffsets.withIndex().associate { (i, off) -> off to i }
     }
 }
+
+/**
+ * perform I/O operations, then move pointer by [pointerDelta]
+ */
+data class IOBlock(val pointerDelta: Int, val ops: List<BfIOOp>) : BfBlockOp
+
+/**
+ * run body while `tape[ptr] != 0`
+ */
+data class Loop(val body: List<BfBlockOp>) : BfBlockOp
+
+sealed interface BfIOOp
+
+data class Output(val expr: AffineExpr) : BfIOOp
+data class Input(val offset: Int) : BfIOOp
 
 /**
  * put the result of [expr] (terms evaluated from before any other writes in this batch happen)

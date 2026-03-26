@@ -17,36 +17,33 @@ object Interpreter : BfRunner {
         var ptr = ptr
         for (block in program) {
             when (block) {
-                is Block -> {
+                is WriteBlock -> {
                     ptr += block.workingOffset
-                    for (op in block.ops) {
-                        when (op) {
-                            is Input -> {
-                                tape[ptr + op.offset] = input.readByte().toUByte()
-                            }
-                            is Output -> {
-                                output.writeByte(tape[ptr + op.offset].toInt())
-                            }
-                            is WriteBatch -> {
-                                if (op.hasCycles) {
-                                    // cyclic: we need to capture a snapshot of all the cells we read from before we start writing
-                                    val snap = UByteArray(op.readOffsets.size)
-                                    for (i in snap.indices) {
-                                        snap[i] = tape[ptr + op.readOffsets[i]]
-                                    }
-                                    for (write in op.writes) {
-                                        tape[ptr + write.offset] = evalExpr(write.expr) { snap[op.snapshotIndex[it]!!] }.toUByte()
-                                    }
-                                } else {
-                                    // acyclic: just read directly from the tape as we go
-                                    for (write in op.writes) {
-                                        tape[ptr + write.offset] = evalExpr(write.expr) { tape[ptr + it] }.toUByte()
-                                    }
-                                }
-                            }
+                    if (block.hasCycles) {
+                        // capture a snapshot of all the cells we read from before we start writing
+                        val snap = UByteArray(block.readOffsets.size)
+                        for (i in snap.indices) {
+                            snap[i] = tape[ptr + block.readOffsets[i]]
+                        }
+                        for (write in block.writes) {
+                            tape[ptr + write.offset] = evalExpr(write.expr) { snap[block.snapshotIndex[it]!!] }.toUByte()
+                        }
+                    } else {
+                        // no conflicts, just read directly from the tape as we go
+                        for (write in block.writes) {
+                            tape[ptr + write.offset] = evalExpr(write.expr) { tape[ptr + it] }.toUByte()
                         }
                     }
-                    ptr = ptr + block.pointerDelta - block.workingOffset
+                    ptr += block.pointerDelta - block.workingOffset
+                }
+                is IOBlock -> {
+                    for (op in block.ops) {
+                        when (op) {
+                            is Input -> tape[ptr + op.offset] = input.readByte().toUByte()
+                            is Output -> output.writeByte(evalExpr(op.expr) { tape[ptr + it] })
+                        }
+                    }
+                    ptr += block.pointerDelta
                 }
                 is Loop -> {
                     while (tape[ptr] != 0.toUByte()) {
