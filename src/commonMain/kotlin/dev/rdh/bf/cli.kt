@@ -17,7 +17,6 @@ abstract class CommandLine {
     protected abstract val systemRunner: BfRunner?
 
     private var compiled = false
-    private var export = false
     private var printTime = false
     private var nextIsString = false
     private var tapeSize = DEFAULT_TAPE_SIZE
@@ -37,9 +36,6 @@ abstract class CommandLine {
             },
             Option("compile", 'c', "if true, compile the following programs to $nativeCodeType; else run in interpreted mode (default)") {
                 compiled = it?.let { truthy(it) } ?: true
-            }.takeIf { systemRunner != null },
-            Option("export", 'E', "Export the following programs to a file under `.bf.out` (if --compiled=true)") {
-                export = it?.let { truthy(it) } ?: true
             }.takeIf { systemRunner != null },
             Option("tape-size", 's', "Set the tape size for the following programs (default: $DEFAULT_TAPE_SIZE)") {
                 tapeSize = it?.toIntOrNull() ?: run {

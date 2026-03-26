@@ -32,9 +32,9 @@ object Parser {
                     val list = opsStack.last()
                     if ((opsStack.size != 1 || list.isNotEmpty()) && list.lastOrNull() !is Loop) {
                         when (val solved = trySolveLoop(loopBody)) {
-                            null -> list += Loop(loopBody)
                             is Block -> appendBlockIfNonEmpty(list, solved)
                             is Loop -> list += solved
+                            null -> list += Loop(loopBody)
                         }
                     }
 
@@ -130,11 +130,9 @@ object Parser {
 
         val inductionWrite = writes[0] ?: return null
         val inductionDelta = inductionWrite.expr - AffineExpr.cell(0)
-        if (!inductionDelta.isConstant) return null
-        val delta = inductionDelta.constant
-        if (delta == 0) return null
+        if (!inductionDelta.isConstant || inductionDelta.constant == 0) return null
 
-        val inv = modInverse(-delta, 1 shl Byte.SIZE_BITS) ?: return null
+        val inv = modInverse(-inductionDelta.constant, 1 shl Byte.SIZE_BITS) ?: return null
         val iterations = AffineExpr(terms = listOf(AffineExpr.Term(inv, setOf(0))))
 
         val deltas = mutableMapOf<Int, AffineExpr>()
@@ -157,7 +155,7 @@ object Parser {
         writes: Map<Int, Write>,
         deltas: Map<Int, AffineExpr>,
     ): Map<Int, AffineExpr>? {
-        val constSubst = writes
+        val consts = writes
             .filter { (off, w) -> off != 0 && w.expr.isConstant }
             .mapValuesTo(mutableMapOf()) { (_, w) -> w.expr }
             .also { if (it.isEmpty()) return null }
@@ -166,13 +164,13 @@ object Parser {
         var changed = true
         while (changed) {
             changed = false
-            substituted = deltas.mapValues { (_, d) -> d.substitute(constSubst) }
+            substituted = deltas.mapValues { (_, d) -> d.substitute(consts) }
 
             for ((off, w) in writes) {
-                if (off == 0 || off in constSubst) continue
-                val simplifiedExpr = w.expr.substitute(constSubst)
+                if (off == 0 || off in consts) continue
+                val simplifiedExpr = w.expr.substitute(consts)
                 if (simplifiedExpr.isConstant) {
-                    constSubst[off] = simplifiedExpr
+                    consts[off] = simplifiedExpr
                     changed = true
                 }
             }
