@@ -182,7 +182,7 @@ object Parser {
     private fun buildSolved(deltas: Map<Int, AffineExpr>, iterations: AffineExpr): Block {
         val resultWrites = mutableListOf(Write(0, AffineExpr.ZERO))
 
-        for ((offset, d) in deltas.filter { it != AffineExpr.ZERO }) {
+        for ((offset, d) in deltas.filterValues { it != AffineExpr.ZERO }) {
             resultWrites += Write(offset, AffineExpr.cell(offset) + d * iterations)
         }
 

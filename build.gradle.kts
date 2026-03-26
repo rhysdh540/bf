@@ -160,7 +160,7 @@ for (file in file("src/commonTest/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
-                "--compile", "--export", "--time",
+                "--compile", "--time",
                 file.absolutePath
             )
 
