@@ -173,35 +173,48 @@ object Parser {
         deltas.values.all { d -> d.terms.flatMap { it.offsets }.none { it in modifiedOffsets } }
 
     /**
-     * propagate constant assignments through deltas until no new constants are discovered.
-     * returns the substituted deltas, or null if no constant cells exist (splitting can't help).
+     * propagate loop-invariant assignments through deltas until no new invariants are discovered.
+     *
+     * after peeling one iteration, any cell whose write expression no longer depends on the
+     * remaining modified set has a fixed value for the rest of the loop and can be substituted.
+     * returns the substituted deltas, or null if no invariant cells exist (splitting can't help).
      */
-    private fun propagateConstants(
+    private fun propagateInvariants(
         writes: Map<Int, Write>,
         deltas: Map<Int, Expression>,
     ): Map<Int, Expression>? {
-        val consts = writes
-            .filter { (off, w) -> off != 0 && w.expr.isConstant }
-            .mapValuesTo(mutableMapOf()) { (_, w) -> w.expr }
-            .also { if (it.isEmpty()) return null }
-
-        var substituted = emptyMap<Int, Expression>()
+        val invariants = mutableMapOf<Int, Expression>()
+        var substituted = deltas
         var changed = true
+
         while (changed) {
             changed = false
-            substituted = deltas.mapValues { (_, d) -> d.substitute(consts) }
+            val unresolved = writes.keys.filterTo(mutableSetOf()) { it == 0 || it !in invariants }
 
             for ((off, w) in writes) {
-                if (off == 0 || off in consts) continue
-                val simplifiedExpr = w.expr.substitute(consts)
-                if (simplifiedExpr.isConstant) {
-                    consts[off] = simplifiedExpr
+                if (off == 0 || off in invariants) continue
+
+                val simplifiedExpr = w.expr.substitute(invariants)
+                if (simplifiedExpr == Expression.cell(off)) {
+                    invariants[off] = simplifiedExpr
+                    changed = true
+                    continue
+                }
+
+                val dependsOnUnresolved = simplifiedExpr.terms
+                    .flatMap { it.offsets }
+                    .any { it in unresolved }
+
+                if (!dependsOnUnresolved) {
+                    invariants[off] = simplifiedExpr
                     changed = true
                 }
             }
+
+            substituted = deltas.mapValues { (_, d) -> d.substitute(invariants) }
         }
 
-        return substituted
+        return substituted.takeIf { invariants.isNotEmpty() }
     }
 
     private fun buildSolved(deltas: Map<Int, Expression>, iterations: Expression): WriteBlock {
@@ -218,7 +231,7 @@ object Parser {
         )
     }
 
-    private fun trySolveLoop(body: List<BfBlockOp>): BfBlockOp? {
+    internal fun trySolveLoop(body: List<BfBlockOp>): BfBlockOp? {
         val analysis = analyze(body) ?: return null
         val modifiedOffsets = analysis.writes.keys
 
@@ -230,14 +243,15 @@ object Parser {
     }
 
     /**
-     * split the first iteration and try to solve the remainder with constant-propagated deltas
+     * split the first iteration and try to solve the remainder with invariant-propagated deltas
      *
      * result is a Loop that executes at most once, since the first block runs one iteration with
      * the original (unknown) cell values, and the second block solves the remaining iterations
-     * using constants given by the first iteration. the loop exits because the solved block zeroes tape[0].
+     * using invariant values established by the first iteration. the loop exits because the
+     * solved block zeroes tape[0].
      */
     private fun trySplitSolve(analysis: LoopAnalysis, modifiedOffsets: Set<Int>): Loop? {
-        val substituted = propagateConstants(analysis.writes, analysis.deltas) ?: return null
+        val substituted = propagateInvariants(analysis.writes, analysis.deltas) ?: return null
 
         val effectivelyModified = modifiedOffsets
             .filterTo(mutableSetOf()) { off -> off == 0 || substituted[off] != Expression.ZERO }
