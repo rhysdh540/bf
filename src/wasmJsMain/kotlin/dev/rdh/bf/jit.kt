@@ -113,7 +113,7 @@ object Compiler : BfRunner {
             }
         }
 
-        fun exprToWasm(expr: AffineExpr, localByRef: Map<Int, Int>): BinaryenExprRef {
+        fun exprToWasm(expr: Expression, localByRef: Map<Int, Int>): BinaryenExprRef {
             if (expr.terms.isEmpty()) {
                 return m.i32.const(expr.constant)
             }

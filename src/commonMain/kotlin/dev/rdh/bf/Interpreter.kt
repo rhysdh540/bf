@@ -56,7 +56,7 @@ object Interpreter : BfRunner {
         return ptr
     }
 
-    private inline fun evalExpr(expr: AffineExpr, accessor: (Int) -> UByte): Int {
+    private inline fun evalExpr(expr: Expression, accessor: (Int) -> UByte): Int {
         var result = expr.constant
         for (term in expr.terms) {
             var product = term.coeff

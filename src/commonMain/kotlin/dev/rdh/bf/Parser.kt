@@ -78,7 +78,7 @@ object Parser {
         fun flushWrites() {
             if (writeDeltas.isNotEmpty()) {
                 val writes = writeDeltas.filterValues { it != 0 }.map { (targetOffset, delta) ->
-                    Write(targetOffset, AffineExpr(constant = delta, listOf(AffineExpr.Term(1, listOf(targetOffset)))))
+                    Write(targetOffset, Expression(constant = delta, listOf(Expression.Term(1, listOf(targetOffset)))))
                 }
                 if (writes.isNotEmpty()) {
                     result += WriteBlock(0, writes, 0)
@@ -102,7 +102,7 @@ object Parser {
                 '<' -> offset--
                 '.' -> {
                     flushWrites()
-                    appendIO(Output(AffineExpr.cell(offset)))
+                    appendIO(Output(Expression.cell(offset)))
                 }
                 ',' -> {
                     flushWrites()
@@ -138,9 +138,9 @@ object Parser {
     private class LoopAnalysis(
         val merged: WriteBlock,
         val writes: Map<Int, Write>,
-        val deltas: Map<Int, AffineExpr>,
+        val deltas: Map<Int, Expression>,
         val inv: Int,
-        val iterations: AffineExpr
+        val iterations: Expression
     )
 
     private fun analyze(body: List<BfBlockOp>): LoopAnalysis? {
@@ -154,22 +154,22 @@ object Parser {
         val writes = writeBlock.writes.associateBy { it.offset }
 
         val inductionWrite = writes[0] ?: return null
-        val inductionDelta = inductionWrite.expr - AffineExpr.cell(0)
+        val inductionDelta = inductionWrite.expr - Expression.cell(0)
         if (!inductionDelta.isConstant || inductionDelta.constant == 0) return null
 
         val inv = modInverse(-inductionDelta.constant, 1 shl Byte.SIZE_BITS) ?: return null
-        val iterations = AffineExpr(terms = listOf(AffineExpr.Term(inv, listOf(0))))
+        val iterations = Expression(terms = listOf(Expression.Term(inv, listOf(0))))
 
-        val deltas = mutableMapOf<Int, AffineExpr>()
+        val deltas = mutableMapOf<Int, Expression>()
         for ((offset, write) in writes) {
             if (offset == 0) continue
-            deltas[offset] = write.expr - AffineExpr.cell(offset)
+            deltas[offset] = write.expr - Expression.cell(offset)
         }
 
         return LoopAnalysis(writeBlock, writes, deltas, inv, iterations)
     }
 
-    private fun solvable(deltas: Map<Int, AffineExpr>, modifiedOffsets: Set<Int>): Boolean =
+    private fun solvable(deltas: Map<Int, Expression>, modifiedOffsets: Set<Int>): Boolean =
         deltas.values.all { d -> d.terms.flatMap { it.offsets }.none { it in modifiedOffsets } }
 
     /**
@@ -178,14 +178,14 @@ object Parser {
      */
     private fun propagateConstants(
         writes: Map<Int, Write>,
-        deltas: Map<Int, AffineExpr>,
-    ): Map<Int, AffineExpr>? {
+        deltas: Map<Int, Expression>,
+    ): Map<Int, Expression>? {
         val consts = writes
             .filter { (off, w) -> off != 0 && w.expr.isConstant }
             .mapValuesTo(mutableMapOf()) { (_, w) -> w.expr }
             .also { if (it.isEmpty()) return null }
 
-        var substituted = emptyMap<Int, AffineExpr>()
+        var substituted = emptyMap<Int, Expression>()
         var changed = true
         while (changed) {
             changed = false
@@ -204,11 +204,11 @@ object Parser {
         return substituted
     }
 
-    private fun buildSolved(deltas: Map<Int, AffineExpr>, iterations: AffineExpr): WriteBlock {
-        val resultWrites = mutableListOf(Write(0, AffineExpr.ZERO))
+    private fun buildSolved(deltas: Map<Int, Expression>, iterations: Expression): WriteBlock {
+        val resultWrites = mutableListOf(Write(0, Expression.ZERO))
 
-        for ((offset, d) in deltas.filterValues { it != AffineExpr.ZERO }) {
-            resultWrites += Write(offset, AffineExpr.cell(offset) + d * iterations)
+        for ((offset, d) in deltas.filterValues { it != Expression.ZERO }) {
+            resultWrites += Write(offset, Expression.cell(offset) + d * iterations)
         }
 
         return WriteBlock(
@@ -240,12 +240,12 @@ object Parser {
         val substituted = propagateConstants(analysis.writes, analysis.deltas) ?: return null
 
         val effectivelyModified = modifiedOffsets
-            .filterTo(mutableSetOf()) { off -> off == 0 || substituted[off] != AffineExpr.ZERO }
+            .filterTo(mutableSetOf()) { off -> off == 0 || substituted[off] != Expression.ZERO }
 
         if (!solvable(substituted, effectivelyModified)) return null
 
         val split = analysis.merged.copy(pointerDelta = 0, workingOffset = 0)
-        val remainderIterations = AffineExpr(terms = listOf(AffineExpr.Term(analysis.inv, listOf(0))))
+        val remainderIterations = Expression(terms = listOf(Expression.Term(analysis.inv, listOf(0))))
         val solvedRemainder = buildSolved(substituted, remainderIterations)
 
         return Loop(body = listOf(split, solvedRemainder))
@@ -257,7 +257,7 @@ object Parser {
 
         var ptrOffset = 0
         // offset -> expression, in terms of the original entry state
-        val state = mutableMapOf<Int, AffineExpr>()
+        val state = mutableMapOf<Int, Expression>()
         val ioOps = mutableListOf<BfIOOp>()
 
         for (block in blocks) {
@@ -267,7 +267,7 @@ object Parser {
 
                     // all reads in this batch see pre-batch state
                     val snap = state.toMap()
-                    fun snapResolve(abs: Int): AffineExpr = snap[abs] ?: AffineExpr.cell(abs)
+                    fun snapResolve(abs: Int): Expression = snap[abs] ?: Expression.cell(abs)
 
                     for (write in block.writes) {
                         val absTarget = base + write.offset
@@ -289,14 +289,14 @@ object Parser {
                                 val mapping = op.expr.terms
                                     .flatMap { it.offsets }
                                     .distinct()
-                                    .associateWith { relOff -> state[base + relOff] ?: AffineExpr.cell(base + relOff) }
+                                    .associateWith { relOff -> state[base + relOff] ?: Expression.cell(base + relOff) }
                                 ioOps += Output(op.expr.substitute(mapping))
                             }
                             is Input -> {
                                 val absOffset = base + op.offset
                                 ioOps += Input(absOffset)
                                 // input overwrites the cell with an unknown value; reset to identity
-                                state[absOffset] = AffineExpr.cell(absOffset)
+                                state[absOffset] = Expression.cell(absOffset)
                             }
                         }
                     }
@@ -308,7 +308,7 @@ object Parser {
         }
 
         val writes = state
-            .filter { (offset, expr) -> expr != AffineExpr.cell(offset) }
+            .filter { (offset, expr) -> expr != Expression.cell(offset) }
             .map { (offset, expr) -> Write(offset, expr) }
 
         val result = mutableListOf<BfBlockOp>()

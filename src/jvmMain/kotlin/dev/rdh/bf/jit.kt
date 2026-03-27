@@ -119,7 +119,7 @@ object Compiler : BfRunner {
             baload
         }
 
-        fun MethodVisitor.writeExpr(expr: AffineExpr, localByRef: Map<Int, LocalVar>) {
+        fun MethodVisitor.writeExpr(expr: Expression, localByRef: Map<Int, LocalVar>) {
             if (expr.constant != 0 || expr.terms.isEmpty()) {
                 int(expr.constant)
             }
