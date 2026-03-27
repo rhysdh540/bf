@@ -122,13 +122,12 @@ object Compiler : BfRunner {
 
             val liveTerms = expr.terms.filter { it.coeff != 0 }
             for ((i, term) in liveTerms.withIndex()) {
-                val offsets = term.offsets.toList()
 
                 // Build the product: |coeff| * cell[off0] * cell[off1] * ...
                 var currTerm: BinaryenExprRef
                 if (abs(term.coeff) != 1) {
                     currTerm = m.i32.const(abs(term.coeff))
-                    for (off in offsets) {
+                    for (off in term.offsets) {
                         val local = localByRef[off]
                         val cell = if (local != null) m.local.get(local, ns.i32) else load(off)
                         currTerm = m.i32.mul(currTerm, cell)
@@ -136,7 +135,7 @@ object Compiler : BfRunner {
                 } else {
                     // |coeff| == 1: start with first cell, multiply rest
                     var first = true
-                    currTerm = offsets.fold(null as BinaryenExprRef?) { acc, off ->
+                    currTerm = term.offsets.fold(null as BinaryenExprRef?) { acc, off ->
                         val local = localByRef[off]
                         val cell = if (local != null) m.local.get(local, ns.i32) else load(off)
                         if (first) {

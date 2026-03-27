@@ -126,19 +126,18 @@ object Compiler : BfRunner {
 
             val liveTerms = expr.terms.filter { it.coeff != 0 }
             for ((i, term) in liveTerms.withIndex()) {
-                val offsets = term.offsets.toList()
 
                 // Build the product: |coeff| * cell[off0] * cell[off1] * ...
                 if (abs(term.coeff) != 1) {
                     int(abs(term.coeff))
-                    for (off in offsets) {
+                    for (off in term.offsets) {
                         val local = localByRef[off]
                         if (local != null) load(local) else loadCell(off)
                         imul
                     }
                 } else {
                     // |coeff| == 1: start with first cell, multiply rest
-                    for ((j, off) in offsets.withIndex()) {
+                    for ((j, off) in term.offsets.withIndex()) {
                         val local = localByRef[off]
                         if (local != null) load(local) else loadCell(off)
                         if (j > 0) imul

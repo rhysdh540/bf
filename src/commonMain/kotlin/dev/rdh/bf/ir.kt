@@ -78,14 +78,14 @@ data class Write(val offset: Int, val expr: AffineExpr)
 data class AffineExpr(val constant: Int = 0, val terms: List<Term> = emptyList()) {
     companion object {
         val ZERO = AffineExpr()
-        fun cell(offset: Int) = AffineExpr(terms = listOf(Term(1, setOf(offset))))
+        fun cell(offset: Int) = AffineExpr(terms = listOf(Term(1, listOf(offset))))
         fun const(value: Int) = AffineExpr(constant = value)
     }
 
-    data class Term(val coeff: Int, val offsets: Set<Int>)
+    data class Term(val coeff: Int, val offsets: List<Int>)
 
     operator fun plus(other: AffineExpr): AffineExpr {
-        val termMap = defaultMapOf<Set<Int>, Int> { 0}
+        val termMap = defaultMapOf<List<Int>, Int> { 0 }
         for (t in this.terms + other.terms) {
             termMap[t.offsets] += t.coeff
         }
@@ -129,7 +129,7 @@ data class AffineExpr(val constant: Int = 0, val terms: List<Term> = emptyList()
             for (t2 in other.terms) {
                 val c = t1.coeff * t2.coeff
                 if (c != 0) {
-                    result += AffineExpr(terms = listOf(Term(c, t1.offsets + t2.offsets)))
+                    result += AffineExpr(terms = listOf(Term(c, (t1.offsets + t2.offsets).sorted())))
                 }
             }
         }

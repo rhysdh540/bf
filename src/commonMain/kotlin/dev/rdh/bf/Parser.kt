@@ -78,7 +78,7 @@ object Parser {
         fun flushWrites() {
             if (writeDeltas.isNotEmpty()) {
                 val writes = writeDeltas.filterValues { it != 0 }.map { (targetOffset, delta) ->
-                    Write(targetOffset, AffineExpr(constant = delta, listOf(AffineExpr.Term(1, setOf(targetOffset)))))
+                    Write(targetOffset, AffineExpr(constant = delta, listOf(AffineExpr.Term(1, listOf(targetOffset)))))
                 }
                 if (writes.isNotEmpty()) {
                     result += WriteBlock(0, writes, 0)
@@ -158,7 +158,7 @@ object Parser {
         if (!inductionDelta.isConstant || inductionDelta.constant == 0) return null
 
         val inv = modInverse(-inductionDelta.constant, 1 shl Byte.SIZE_BITS) ?: return null
-        val iterations = AffineExpr(terms = listOf(AffineExpr.Term(inv, setOf(0))))
+        val iterations = AffineExpr(terms = listOf(AffineExpr.Term(inv, listOf(0))))
 
         val deltas = mutableMapOf<Int, AffineExpr>()
         for ((offset, write) in writes) {
@@ -245,7 +245,7 @@ object Parser {
         if (!solvable(substituted, effectivelyModified)) return null
 
         val split = analysis.merged.copy(pointerDelta = 0, workingOffset = 0)
-        val remainderIterations = AffineExpr(terms = listOf(AffineExpr.Term(analysis.inv, setOf(0))))
+        val remainderIterations = AffineExpr(terms = listOf(AffineExpr.Term(analysis.inv, listOf(0))))
         val solvedRemainder = buildSolved(substituted, remainderIterations)
 
         return Loop(body = listOf(split, solvedRemainder))
