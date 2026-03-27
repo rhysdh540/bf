@@ -115,6 +115,7 @@ tasks.register<ProGuardTask>("proguard") {
         "-optimizations", "!method/specialization/parametertype",
         "-optimizationpasses", "5",
         "-dontwarn", "java.lang.invoke.*",
+        "-dontwarn", "sun.misc.*",
         "-dontnote",
         "-assumenosideeffects", $$"public class dev.rdh.bf.DslKt$bfProgram$Impl { kotlin.Unit getUnit(java.lang.Object); }"
     )

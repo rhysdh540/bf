@@ -1,13 +1,12 @@
 package dev.rdh.bf
 
+import dev.rdh.bf.util.LineEditor
 import kotlin.time.measureTime
 import kotlin.time.measureTimedValue
 
 private const val DEFAULT_TAPE_SIZE = 1 shl 15
 
 abstract class CommandLine {
-    protected abstract fun readFile(path: String): String
-
     protected abstract val stdin: BfInput
     protected abstract val stdout: BfOutput
     protected abstract val stderr: BfOutput
@@ -15,16 +14,20 @@ abstract class CommandLine {
 
     protected abstract val nativeCodeType: String
     protected abstract val systemRunner: BfRunner?
+    protected abstract val terminal: Terminal
+    protected abstract val fs: FileSystem
 
     private var compiled = false
     private var printTime = false
     private var nextIsString = false
     private var tapeSize = DEFAULT_TAPE_SIZE
+    protected var autoExec = false
 
-    private val options: List<Option> by lazy {
+    protected val options: List<Option> by lazy {
         listOfNotNull(
             Option("help", 'h', "Show this help message") {
                 stderr.write("Usage: bf [options] <program.b>\n")
+                stderr.write("run with no arguments to enter interactive mode\n")
                 stderr.write("Options:\n")
                 for (option in options) {
                     stderr.write("       --${option.name}")
@@ -57,9 +60,30 @@ abstract class CommandLine {
 
     fun run(args: Array<String>) {
         if (args.isEmpty()) {
-            options.first { it.name == "help" }.action(null)
-            return
+            repl()
         }
+        exit(processArgs(args))
+    }
+
+    protected open fun repl(): Nothing {
+        autoExec = true
+        val editor = LineEditor(terminal, stderr, fs) {
+            options.map { "--${it.name}" }
+        }
+
+        while (true) {
+            val line = editor.readLine("> ") ?: break
+            if (line.isBlank()) continue
+            try {
+                processArgs(line.trim().split("\\s+".toRegex()).toTypedArray())
+            } catch (e: Exception) {
+                stderr.write("${e::class.simpleName}: ${e.message}\n")
+            }
+        }
+        exit(0)
+    }
+
+    protected fun processArgs(args: Array<String>): Int {
         for (arg in args) {
             if (nextIsString) {
                 nextIsString = false
@@ -82,16 +106,26 @@ abstract class CommandLine {
                 if (found) continue
             }
 
-            exec(readFile(arg))
+            val content = fs.readFile(arg).getOrNull()
+            if (content != null) {
+                exec(content)
+            } else if (autoExec) {
+                exec(arg)
+            } else {
+                stderr.write("Error reading file '$arg'\n")
+                return 1
+            }
         }
+
+        return 0
     }
 
-    private fun exec(literal: String) {
+    protected fun exec(literal: String) {
         val program = Parser.parse(literal)
 
         val runner = if (compiled) systemRunner!! else Interpreter
 
-        val (executable, cTime) = measureTimedValue { runner.compile(program, 1 shl 15) }
+        val (executable, cTime) = measureTimedValue { runner.compile(program, tapeSize) }
 
         val time = measureTime { executable.run(stdin, stdout) }
 
@@ -116,7 +150,7 @@ abstract class CommandLine {
     }
 }
 
-private data class Option(
+data class Option(
     val name: String,
     val short: Char?,
     val description: String,
@@ -130,4 +164,17 @@ private data class Option(
         }
         return false
     }
+}
+
+interface FileSystem {
+    fun readFile(path: String): Result<String>
+    fun listFiles(dir: String): List<String>
+    fun exists(path: String): Boolean
+    fun isDirectory(path: String): Boolean
+}
+
+interface Terminal {
+    fun enableRawMode()
+    fun disableRawMode()
+    fun readRawByte(): Int
 }

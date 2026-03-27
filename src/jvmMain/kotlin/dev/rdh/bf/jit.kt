@@ -27,6 +27,7 @@ import kotlin.random.Random
 
 object Compiler : BfRunner {
     override fun compile(program: Iterable<BfBlockOp>, tapeSize: Int): BfExecutable {
+        cache[program.toList()]?.let { return it }
         val className = "BFProgram$${Random.nextInt().toHexString()}"
         val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
         cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
@@ -272,7 +273,10 @@ object Compiler : BfRunner {
         val handle = lookup.findStatic(cl, "run", mtype<Void>(type<Reader>(), type<Writer>()).methodType)
         val lambda = convertHandle(handle)
         return BfExecutable { input, output -> lambda(input.reader(), output.writer()) }
+            .also { cache[program.toList()] = it }
     }
+
+    private val cache: MutableMap<List<BfBlockOp>, BfExecutable> = mutableMapOf()
 }
 
 private fun loadClass(bytes: ByteArray): Class<*> {

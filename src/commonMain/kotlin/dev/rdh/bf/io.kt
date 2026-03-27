@@ -7,12 +7,6 @@ fun interface BfInput {
 fun interface BfOutput {
     fun writeByte(value: Int)
     fun flush() {}
-
-    fun write(v: Any?) {
-        for (c in v.toString()) {
-            writeByte(c.code)
-        }
-    }
 }
 
 class ByteInput(private val data: IntArray) : BfInput {
@@ -41,4 +35,20 @@ object NullInput : BfInput {
 
 object NullOutput : BfOutput {
     override fun writeByte(value: Int) {}
+}
+
+fun BfOutput.write(v: Any?) {
+    for (c in v.toString()) {
+        writeByte(c.code)
+    }
+}
+
+fun BfInput.readLine(): String {
+    val sb = StringBuilder()
+    while (true) {
+        val b = readByte()
+        if (b == -1 || b == '\n'.code) break
+        sb.append(b.toChar())
+    }
+    return sb.toString()
 }
