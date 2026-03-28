@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class ParserTest {
     @Test
@@ -101,6 +101,37 @@ class ParserTest {
             Expression.cell(4) + Expression.cell(2) * Expression.cell(0),
             writesByOffset.getValue(4).expr
         )
+    }
+
+    @Test
+    fun `nested_loops reduces to single constant output`() {
+        val program = ">>+++++++>>>>>>->->--------[-<[-]-[-<[-]-[-<<<<<<<<[-]-[->[-]>>[-]>>[-]<<<[-<+>>+<]>[-<+>]<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<<<<<]>>>>>>>>]>]>]<<<<<<."
+        val ops = Parser.parse(program)
+
+        assertEquals(1, ops.size)
+        val ioBlock = assertIs<IOBlock>(ops.single())
+        assertEquals(1, ioBlock.ops.size)
+        val output = assertIs<Output>(ioBlock.ops.single())
+        assertEquals(Expression.const(56), output.expr)
+        assertEquals(0, ioBlock.pointerDelta)
+    }
+
+    @Test
+    fun `dead writes are eliminated at end of program`() {
+        // +++. should produce IOBlock with Output(3), no trailing WriteBlock
+        val ops = Parser.parse("+++.")
+        assertEquals(1, ops.size)
+        val ioBlock = assertIs<IOBlock>(ops.single())
+        assertEquals(1, ioBlock.ops.size)
+        val output = assertIs<Output>(ioBlock.ops.single())
+        assertEquals(Expression.const(3), output.expr)
+    }
+
+    @Test
+    fun `conditional is inlined when guard is known nonzero`() {
+        // +[-] should reduce to empty (cell set to 1, then loop zeros it, dead write eliminated)
+        val ops = Parser.parse("+[-]")
+        assertTrue(ops.isEmpty())
     }
 
     private fun writeBlockOf(vararg writes: Write) = WriteBlock(

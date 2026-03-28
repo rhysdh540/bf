@@ -128,6 +128,7 @@ abstract class CommandLine {
         val (executable, cTime) = measureTimedValue { runner.compile(program, tapeSize) }
 
         val time = measureTime { executable.run(stdin, stdout) }
+        stdout.flush()
 
         if (printTime) {
             stderr.write("Compile time: ${formatTime(cTime)}\n")

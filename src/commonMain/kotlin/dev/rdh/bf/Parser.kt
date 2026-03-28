@@ -32,11 +32,9 @@ object Parser {
                     val list = opsStack.last()
                     if ((opsStack.size != 1 || list.isNotEmpty()) && list.lastOrNull() !is Loop && list.lastOrNull() !is Conditional) {
                         when (val solved = trySolveLoop(loopBody)) {
-                            is WriteBlock -> appendBlocks(list, listOf(solved))
-                            is Conditional -> list += solved
+                            is WriteBlock, is Conditional -> appendBlocks(list, listOf(solved))
                             is Loop -> list += solved
-                            null -> list += Loop(loopBody)
-                            else -> list += Loop(loopBody)
+                            is IOBlock, null -> list += Loop(loopBody)
                         }
                     }
 
@@ -52,7 +50,7 @@ object Parser {
 
         val out = opsStack.single()
         appendBlocks(out, parseBlock(program.subSequence(blockStarts.single(), program.length)))
-        return out
+        return mergeBlocks(out, cellDefault = { Expression.ZERO }, eliminateDeadWrites = true)
     }
 
     private fun appendBlocks(ops: MutableList<BfBlockOp>, newBlocks: List<BfBlockOp>) {
@@ -62,7 +60,7 @@ object Parser {
         if (filtered.isEmpty()) return
 
         val prev = ops.lastOrNull()
-        if (prev != null && prev !is Loop && prev !is Conditional) {
+        if (prev != null && prev !is Loop) {
             val merged = mergeBlocks(listOf(prev) + filtered)
             ops.removeLast()
             ops.addAll(merged)
@@ -266,9 +264,13 @@ object Parser {
         return Conditional(body = listOf(split, solvedRemainder))
     }
 
-    private fun mergeBlocks(blocks: List<BfBlockOp>): List<BfBlockOp> {
+    private fun mergeBlocks(
+        blocks: List<BfBlockOp>,
+        cellDefault: (Int) -> Expression = { Expression.cell(it) },
+        eliminateDeadWrites: Boolean = false,
+    ): List<BfBlockOp> {
         if (blocks.isEmpty()) return emptyList()
-        if (blocks.size == 1) return blocks
+        if (blocks.size == 1 && cellDefault(0) == Expression.cell(0) && !eliminateDeadWrites) return blocks
 
         var ptrOffset = 0
         // offset -> expression, in terms of the original entry state
@@ -280,7 +282,7 @@ object Parser {
 
             // all reads in this batch see pre-batch state
             val snap = state.toMap()
-            fun snapResolve(abs: Int): Expression = snap[abs] ?: Expression.cell(abs)
+            fun snapResolve(abs: Int): Expression = snap[abs] ?: cellDefault(abs)
 
             for (write in block.writes) {
                 val absTarget = base + write.offset
@@ -306,7 +308,7 @@ object Parser {
                                 val mapping = op.expr.terms
                                     .flatMap { it.offsets }
                                     .distinct()
-                                    .associateWith { relOff -> state[base + relOff] ?: Expression.cell(base + relOff) }
+                                    .associateWith { relOff -> state[base + relOff] ?: cellDefault(base + relOff) }
                                 ioOps += Output(op.expr.substitute(mapping))
                             }
                             is Input -> {
@@ -322,7 +324,7 @@ object Parser {
                 }
                 is Conditional -> {
                     // check if the guard cell (tape[ptrOffset]) is symbolically known
-                    val guardExpr = state[ptrOffset] ?: Expression.cell(ptrOffset)
+                    val guardExpr = state[ptrOffset] ?: cellDefault(ptrOffset)
                     if (guardExpr.isConstant && guardExpr.constant == 0) {
                         // guard is zero — the conditional body never runs, skip it
                     } else if (guardExpr.isConstant && guardExpr.constant != 0) {
@@ -338,7 +340,15 @@ object Parser {
                         return blocks
                     }
                 }
-                is Loop -> error("cannot merge across loops")
+                is Loop -> return blocks
+            }
+        }
+
+        if (eliminateDeadWrites) {
+            return if (ioOps.isNotEmpty()) {
+                listOf(IOBlock(0, ioOps))
+            } else {
+                emptyList()
             }
         }
 
@@ -352,8 +362,8 @@ object Parser {
             result += IOBlock(0, ioOps)
             result += WriteBlock(ptrOffset, orderWrites(writes), 0)
         } else if (ioOps.isNotEmpty()) {
-            result += IOBlock(ptrOffset, ioOps)
-        } else if (writes.isNotEmpty() || ptrOffset != 0) {
+            result += IOBlock(0, ioOps)
+        } else if (!eliminateDeadWrites && (writes.isNotEmpty() || ptrOffset != 0)) {
             result += WriteBlock(ptrOffset, if (writes.isNotEmpty()) orderWrites(writes) else emptyList(), 0)
         }
 
