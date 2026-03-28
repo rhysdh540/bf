@@ -61,6 +61,20 @@ data class IOBlock(val pointerDelta: Int, val ops: List<BfIOOp>) : BfBlockOp
  */
 data class Loop(val body: List<BfBlockOp>) : BfBlockOp
 
+/**
+ * run body once if `tape[ptr] != 0`
+ *
+ * structurally identical to a loop that executes at most once. this arises from
+ * split-solving: the first block peels one iteration, the second block solves
+ * the remainder in closed form, and the guard cell is zeroed — so the condition
+ * can never be true a second time.
+ *
+ * unlike [Loop], a [Conditional] can be inlined by [mergeBlocks][Parser] when
+ * the guard cell's symbolic value is a known nonzero constant, enabling further
+ * optimization of enclosing loops.
+ */
+data class Conditional(val body: List<BfBlockOp>) : BfBlockOp
+
 sealed interface BfIOOp
 
 data class Output(val expr: Expression) : BfIOOp

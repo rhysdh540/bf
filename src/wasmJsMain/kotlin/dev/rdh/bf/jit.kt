@@ -275,6 +275,22 @@ object Compiler : BfRunner {
                             )
                         )
                     }
+
+                    is Conditional -> {
+                        val id = nLoops++
+                        val exitLabel = "c$id"
+
+                        result += m.block(
+                            label = exitLabel,
+                            children = listOf(
+                                m.brIf(
+                                    label = exitLabel,
+                                    condition = m.i32.eqz(load(0))
+                                ),
+                                *lowerProgram(op.body),
+                            )
+                        )
+                    }
                 }
             }
 

@@ -30,9 +30,10 @@ object Parser {
                     val loopBody = opsStack.removeLast()
 
                     val list = opsStack.last()
-                    if ((opsStack.size != 1 || list.isNotEmpty()) && list.lastOrNull() !is Loop) {
+                    if ((opsStack.size != 1 || list.isNotEmpty()) && list.lastOrNull() !is Loop && list.lastOrNull() !is Conditional) {
                         when (val solved = trySolveLoop(loopBody)) {
                             is WriteBlock -> appendBlocks(list, listOf(solved))
+                            is Conditional -> list += solved
                             is Loop -> list += solved
                             null -> list += Loop(loopBody)
                             else -> list += Loop(loopBody)
@@ -61,7 +62,7 @@ object Parser {
         if (filtered.isEmpty()) return
 
         val prev = ops.lastOrNull()
-        if (prev != null && prev !is Loop) {
+        if (prev != null && prev !is Loop && prev !is Conditional) {
             val merged = mergeBlocks(listOf(prev) + filtered)
             ops.removeLast()
             ops.addAll(merged)
@@ -144,7 +145,7 @@ object Parser {
     )
 
     private fun analyze(body: List<BfBlockOp>): LoopAnalysis? {
-        if (body.any { it !is WriteBlock }) return null
+        if (body.any { it !is WriteBlock && it !is Conditional }) return null
 
         val merged = mergeBlocks(body)
         if (merged.size != 1) return null
@@ -250,7 +251,7 @@ object Parser {
      * using invariant values established by the first iteration. the loop exits because the
      * solved block zeroes tape[0].
      */
-    private fun trySplitSolve(analysis: LoopAnalysis, modifiedOffsets: Set<Int>): Loop? {
+    private fun trySplitSolve(analysis: LoopAnalysis, modifiedOffsets: Set<Int>): Conditional? {
         val substituted = propagateInvariants(analysis.writes, analysis.deltas) ?: return null
 
         val effectivelyModified = modifiedOffsets
@@ -262,7 +263,7 @@ object Parser {
         val remainderIterations = Expression(terms = listOf(Expression.Term(analysis.inv, listOf(0))))
         val solvedRemainder = buildSolved(substituted, remainderIterations)
 
-        return Loop(body = listOf(split, solvedRemainder))
+        return Conditional(body = listOf(split, solvedRemainder))
     }
 
     private fun mergeBlocks(blocks: List<BfBlockOp>): List<BfBlockOp> {
@@ -274,26 +275,28 @@ object Parser {
         val state = mutableMapOf<Int, Expression>()
         val ioOps = mutableListOf<BfIOOp>()
 
+        fun mergeWriteBlock(block: WriteBlock) {
+            val base = ptrOffset + block.workingOffset
+
+            // all reads in this batch see pre-batch state
+            val snap = state.toMap()
+            fun snapResolve(abs: Int): Expression = snap[abs] ?: Expression.cell(abs)
+
+            for (write in block.writes) {
+                val absTarget = base + write.offset
+                val mapping = write.expr.terms
+                    .flatMap { it.offsets }
+                    .distinct()
+                    .associateWith { relOff -> snapResolve(base + relOff) }
+                state[absTarget] = write.expr.substitute(mapping)
+            }
+
+            ptrOffset += block.pointerDelta
+        }
+
         for (block in blocks) {
             when (block) {
-                is WriteBlock -> {
-                    val base = ptrOffset + block.workingOffset
-
-                    // all reads in this batch see pre-batch state
-                    val snap = state.toMap()
-                    fun snapResolve(abs: Int): Expression = snap[abs] ?: Expression.cell(abs)
-
-                    for (write in block.writes) {
-                        val absTarget = base + write.offset
-                        val mapping = write.expr.terms
-                            .flatMap { it.offsets }
-                            .distinct()
-                            .associateWith { relOff -> snapResolve(base + relOff) }
-                        state[absTarget] = write.expr.substitute(mapping)
-                    }
-
-                    ptrOffset += block.pointerDelta
-                }
+                is WriteBlock -> mergeWriteBlock(block)
                 is IOBlock -> {
                     val base = ptrOffset
 
@@ -316,6 +319,24 @@ object Parser {
                     }
 
                     ptrOffset += block.pointerDelta
+                }
+                is Conditional -> {
+                    // check if the guard cell (tape[ptrOffset]) is symbolically known
+                    val guardExpr = state[ptrOffset] ?: Expression.cell(ptrOffset)
+                    if (guardExpr.isConstant && guardExpr.constant == 0) {
+                        // guard is zero — the conditional body never runs, skip it
+                    } else if (guardExpr.isConstant && guardExpr.constant != 0) {
+                        // guard is a known nonzero constant — inline the body
+                        for (innerBlock in block.body) {
+                            when (innerBlock) {
+                                is WriteBlock -> mergeWriteBlock(innerBlock)
+                                else -> error("cannot merge Conditional with non-WriteBlock body: $innerBlock")
+                            }
+                        }
+                    } else {
+                        // guard depends on unknown cells — can't inline, bail out of merging
+                        return blocks
+                    }
                 }
                 is Loop -> error("cannot merge across loops")
             }

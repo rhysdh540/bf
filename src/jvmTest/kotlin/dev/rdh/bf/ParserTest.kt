@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 class ParserTest {
     @Test
@@ -38,10 +39,10 @@ class ParserTest {
             )
         )
 
-        val loop = assertIs<Loop>(solved)
-        assertEquals(2, loop.body.size)
+        val cond = assertIs<Conditional>(solved)
+        assertEquals(2, cond.body.size)
 
-        val remainder = assertIs<WriteBlock>(loop.body[1])
+        val remainder = assertIs<WriteBlock>(cond.body[1])
         val writesByOffset = remainder.writes.associateBy { it.offset }
         assertEquals(Expression.ZERO, writesByOffset.getValue(0).expr)
         assertFalse(1 in writesByOffset)
@@ -63,8 +64,8 @@ class ParserTest {
             )
         )
 
-        val loop = assertIs<Loop>(solved)
-        val remainder = assertIs<WriteBlock>(loop.body[1])
+        val cond = assertIs<Conditional>(solved)
+        val remainder = assertIs<WriteBlock>(cond.body[1])
         val writesByOffset = remainder.writes.associateBy { it.offset }
         assertFalse(1 in writesByOffset)
         assertEquals(
@@ -88,8 +89,8 @@ class ParserTest {
             )
         )
 
-        val loop = assertIs<Loop>(solved)
-        val remainder = assertIs<WriteBlock>(loop.body[1])
+        val cond = assertIs<Conditional>(solved)
+        val remainder = assertIs<WriteBlock>(cond.body[1])
         val writesByOffset = remainder.writes.associateBy { it.offset }
         assertEquals(Expression.ZERO, writesByOffset.getValue(0).expr)
         assertFalse(1 in writesByOffset)

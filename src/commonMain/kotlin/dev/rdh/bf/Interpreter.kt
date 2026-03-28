@@ -50,6 +50,11 @@ object Interpreter : BfRunner {
                         ptr = run(block.body, input, output, tape, ptr)
                     }
                 }
+                is Conditional -> {
+                    if (tape[ptr] != 0.toUByte()) {
+                        ptr = run(block.body, input, output, tape, ptr)
+                    }
+                }
             }
         }
 

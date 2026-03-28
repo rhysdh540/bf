@@ -220,7 +220,7 @@ object Compiler : BfRunner {
                 loadCell(0)
                 ifeq(loopEnd)
 
-                if (block.body.any { it is Loop }) {
+                if (block.body.any { it is Loop || it is Conditional }) {
                     val methodName = makeLoopBody(block) { writeBlock(it) }
 
                     // call the loop body
@@ -239,6 +239,19 @@ object Compiler : BfRunner {
                 // jump back to the start of the loop
                 goto(loopStart)
                 mark(loopEnd)
+            }
+
+            is Conditional -> {
+                val condEnd = Label()
+                // if (tape[pointer] == 0) skip
+                loadCell(0)
+                ifeq(condEnd)
+
+                for (op in block.body) {
+                    writeBlock(op)
+                }
+
+                mark(condEnd)
             }
         }
 
