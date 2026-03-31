@@ -115,6 +115,7 @@ tasks.register<ProGuardTask>("proguard") {
         "-optimizations", "!method/specialization/parametertype",
         "-optimizationpasses", "5",
         "-dontwarn", "java.lang.invoke.*",
+        "-dontwarn", "sun.misc.*",
         "-dontnote",
         "-assumenosideeffects", $$"public class dev.rdh.bf.DslKt$bfProgram$Impl { kotlin.Unit getUnit(java.lang.Object); }"
     )
@@ -152,7 +153,7 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
-for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
+for (file in file("src/commonTest/resources").listFiles() ?: emptyArray()) {
     if (file.isFile && file.extension == "b") {
         val name = file.nameWithoutExtension
 
@@ -160,10 +161,11 @@ for (file in file("src/jvmTest/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
-                "--optimise", "--compile",
-                "--export", "--time",
+                "--compile", "--time",
                 file.absolutePath
             )
+
+            environment("BF_EXPORT", "1")
 
             jvmArgs(
                 "-server", "-Xmx3g", "-XX:+UseZGC",

@@ -1,9 +1,5 @@
 package dev.rdh.bf
 
-actual fun systemRunner(options: SystemRunnerOptions): BfRunner {
-    return AffineNasmWriter
-}
-
 context(s: StringBuilder)
 operator fun CharSequence.unaryPlus() = s.appendLine(this)
 
@@ -14,3 +10,5 @@ interface SysCallProvider {
 }
 
 expect val sys: SysCallProvider
+
+actual val nativeRunner: BfRunner = NasmWriter

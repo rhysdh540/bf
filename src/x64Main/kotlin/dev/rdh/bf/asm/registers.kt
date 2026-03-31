@@ -46,3 +46,8 @@ val Register.rex: Boolean get() = code > 7u
 
 // lower 3 bits of code are used for ModR/M encoding
 val Register.rm: UInt get() = code and 7u
+
+val Register.as64: GP64 get() = GP64.entries[code.toInt()]
+val Register.as32: GP32 get() = GP32.entries[code.toInt()]
+val Register.as16: GP16 get() = GP16.entries[code.toInt()]
+val Register.as8: GP8 get() = GP8.entries[code.toInt()]

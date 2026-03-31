@@ -39,9 +39,14 @@ class Nasm : Assembler {
         +"mov ${dest.asString()}, ${src.asString()}"
     }
 
-    override fun movzx(dest: Register, src: Memory) {
-        require(dest.width > src.width) { "movzx dest $dest must be wider than source $src" }
-        require(src.width <= 16u) { "movzx source must be byte or word" }
+    override fun movzx(dest: Register, src: DataSource) {
+        val srcWidth = when (src) {
+            is Register -> src.width
+            is Memory -> src.width
+            else -> throw IllegalArgumentException()
+        }
+        require(dest.width > srcWidth) { "movzx dest $dest must be wider than source $src" }
+        require(srcWidth <= 16u) { "movzx source must be byte or word" }
         +"movzx ${dest.asString()}, ${src.asString()}"
     }
 
@@ -86,10 +91,14 @@ class Nasm : Assembler {
         +"cmp ${op1.asString()}, ${op2.asString()}"
     }
     override fun jmp(label: String) = +"jmp $label"
+    override fun je(label: String) = +"je $label"
     override fun jne(label: String) = +"jne $label"
     override fun mark(label: String) {
         s.appendLine("$label:")
     }
+
+    override fun push(src: DataSource) = +"push ${src.asString()}"
+    override fun pop(dest: DataDestination) = +"pop ${dest.asString()}"
 
     fun addRaw(line: String) {
         s.appendLine(line)

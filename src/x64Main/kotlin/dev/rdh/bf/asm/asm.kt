@@ -2,7 +2,7 @@ package dev.rdh.bf.asm
 
 interface Assembler {
     fun mov(dest: DataDestination, src: DataSource)
-    fun movzx(dest: Register, src: Memory)
+    fun movzx(dest: Register, src: DataSource)
     fun lea(dest: Register, src: Memory)
     fun add(dest: DataDestination, src: DataSource)
     fun sub(dest: DataDestination, src: DataSource)
@@ -14,6 +14,9 @@ interface Assembler {
     fun call(label: String)
     fun cmp(op1: DataDestination, op2: DataSource)
     fun jmp(label: String)
+    fun je(label: String)
     fun jne(label: String)
     fun mark(label: String)
+    fun push(src: DataSource)
+    fun pop(dest: DataDestination)
 }

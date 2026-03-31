@@ -7,31 +7,26 @@ fun interface BfInput {
 fun interface BfOutput {
     fun writeByte(value: Int)
     fun flush() {}
-
-    fun write(v: Any?) {
-        for (c in v.toString()) {
-            writeByte(c.code)
-        }
-    }
 }
 
-class StringInput(private val data: String) : BfInput {
+class ByteInput(private val data: IntArray) : BfInput {
     private var pos = 0
 
     override fun readByte(): Int {
-        if (pos >= data.length) return -1
-        return data[pos++].code
+        if (pos >= data.size) return -1
+        return data[pos++]
     }
 }
 
-class StringOutput : BfOutput {
-    private val builder = StringBuilder()
+class ByteOutput : BfOutput {
+    private val buf = mutableListOf<Int>()
+
+    val bytes: List<Int>
+        get() = buf
 
     override fun writeByte(value: Int) {
-        builder.append(value.toChar())
+        buf.add(value)
     }
-
-    override fun toString(): String = builder.toString()
 }
 
 object NullInput : BfInput {
@@ -40,4 +35,20 @@ object NullInput : BfInput {
 
 object NullOutput : BfOutput {
     override fun writeByte(value: Int) {}
+}
+
+fun BfOutput.write(v: Any?) {
+    for (c in v.toString()) {
+        writeByte(c.code)
+    }
+}
+
+fun BfInput.readLine(): String {
+    val sb = StringBuilder()
+    while (true) {
+        val b = readByte()
+        if (b == -1 || b == '\n'.code) break
+        sb.append(b.toChar())
+    }
+    return sb.toString()
 }

@@ -1,19 +1,21 @@
 package dev.rdh.bf
 
 import dev.rdh.bf.asm.DataDestination
+import dev.rdh.bf.asm.DataSource
 import dev.rdh.bf.asm.GP32
 import dev.rdh.bf.asm.GP64
 import dev.rdh.bf.asm.GP8
 import dev.rdh.bf.asm.Immediate
 import dev.rdh.bf.asm.Memory
 import dev.rdh.bf.asm.Nasm
+import dev.rdh.bf.asm.as8
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.cstr
-import kotlinx.cinterop.toKString
+import kotlin.collections.plusAssign
+import kotlin.math.abs
 
 object NasmWriter : BfRunner {
     @OptIn(ExperimentalForeignApi::class)
-    override fun compile(program: Iterable<BFOperation>): BfExecutable {
+    override fun compile(program: Iterable<BfBlockOp>, tapeSize: Int): BfExecutable {
         val s = Nasm {
             fun addConst(dest: DataDestination, n: Int) {
                 if (n < 0) {
@@ -24,75 +26,138 @@ object NasmWriter : BfRunner {
             }
 
             mark("out")
-            lea(GP64.RSI, Memory.qword(GP64.RBX, GP64.RSI))
+            push(GP64.RSI)
+            mov(GP64.RSI, GP64.RSP)
             mov(GP32.EAX, Immediate(sys.write))
-            mov(GP32.EDI, Immediate(1)) // stdout
+            mov(GP32.EDI, Immediate(platform.posix.STDOUT_FILENO))
             mov(GP32.EDX, Immediate(1)) // write 1 byte
             syscall()
+            pop(GP64.RSI)
             ret()
 
             mark("in")
             lea(GP64.RSI, Memory.qword(GP64.RBX, GP64.RSI))
             mov(GP32.EAX, Immediate(sys.read))
-            mov(GP32.EDI, Immediate(0)) // stdin
+            mov(GP32.EDI, Immediate(platform.posix.STDIN_FILENO))
             mov(GP32.EDX, Immediate(1)) // read 1 byte
             syscall()
             ret()
 
             mark("_start")
             addRaw("    lea rbx, [tape]")
-            add(GP64.RBX, Immediate(TAPE_SIZE / 2))
+            add(GP64.RBX, Immediate(tapeSize / 2))
+            mov(GP64.RBP, GP64.RSP)
 
             var loopCounter = 0
 
-            fun writeOp(op: BFOperation) {
-                when(op) {
-                    is Copy -> {
-                        movzx(GP32.EAX, Memory.byte(GP64.RBX))
-                        imul(GP32.EAX, GP32.EAX, Immediate(op.multiplier))
-                        add(Memory.byte(GP64.RBX, null, 1, op.offset.toLong()), GP8.AL)
+            fun writeExpr(expr: Expression, offsetToData: Map<Int, DataSource>, dest: GP64) {
+                val temp = if (dest == GP64.RCX) GP64.RAX else GP64.RCX
+                mov(dest, Immediate(expr.constant))
+
+                val liveTerms = expr.terms.filter { it.coeff != 0 }
+                for (term in liveTerms) {
+
+                    mov(temp, Immediate(abs(term.coeff)))
+                    for (off in term.offsets) {
+                        val src = offsetToData[off] ?: Memory.byte(GP64.RBX, displacement = off.toLong())
+                        movzx(GP64.RDX, src)
+                        imul(temp, GP64.RDX)
                     }
-                    is Input -> {
-                        mov(GP64.RSI, Immediate(op.offset))
-                        call("in")
+
+                    if (term.coeff >= 0) {
+                        add(dest, temp)
+                    } else {
+                        sub(dest, temp)
+                    }
+                }
+            }
+
+            fun writeBlock(block: BfBlockOp) {
+                when (block) {
+                    is WriteBlock -> {
+                        addConst(GP64.RBX, block.workingOffset)
+                        val refsToCache = mutableSetOf<Int>()
+                        val refsUsed = mutableSetOf<Int>()
+                        val written = mutableSetOf<Int>()
+                        for (write in block.writes) {
+                            for (term in write.expr.terms) {
+                                if (term.coeff == 0) continue
+                                for (off in term.offsets) {
+                                    if ((off !in refsToCache && off in written) || !refsUsed.add(off)) {
+                                        refsToCache += off
+                                    }
+                                }
+                            }
+                            written += write.offset
+                        }
+
+                        val offsetToData = mutableMapOf<Int, DataSource>()
+                        for ((i, ref) in refsToCache.withIndex()) {
+                            dec(GP64.RSP) // reserve space for one value
+                            movzx(GP64.RAX, Memory.byte(GP64.RBX, displacement = ref.toLong())) // load into rax
+                            mov(Memory.byte(GP64.RSP), GP8.AL) // and store on stack
+                            offsetToData[ref] = Memory.byte(base = GP64.RBP, displacement = -(i + 1).toLong())
+                        }
+
+                        for (write in block.writes) {
+                            writeExpr(write.expr, offsetToData, GP64.RAX)
+                            mov(Memory.byte(GP64.RBX, displacement = write.offset.toLong()), GP8.AL)
+                        }
+
+                        if (refsToCache.isNotEmpty()) {
+                            mov(GP64.RSP, GP64.RBP)
+                        }
+                        addConst(GP64.RBX, block.pointerDelta - block.workingOffset)
                     }
                     is Loop -> {
                         val c = loopCounter++
                         jmp("LC$c")
                         mark("L$c")
-                        for (op in op) {
-                            writeOp(op)
+                        for (op in block.body) {
+                            writeBlock(op)
                         }
                         mark("LC$c")
                         cmp(Memory.byte(GP64.RBX), Immediate(0))
                         jne("L$c")
                     }
-                    is PointerMove -> {
-                        addConst(GP64.RBX, op.value)
+
+                    is Conditional -> {
+                        val c = loopCounter++
+                        cmp(Memory.byte(GP64.RBX), Immediate(0))
+                        je("LC$c")
+                        for (op in block.body) {
+                            writeBlock(op)
+                        }
+                        mark("LC$c")
                     }
-                    is Print -> {
-                        mov(GP64.RSI, Immediate(op.offset))
-                        call("out")
-                    }
-                    is SetToConstant -> {
-                        mov(Memory.byte(GP64.RBX, displacement = op.offset.toLong()), Immediate(op.value))
-                    }
-                    is ValueChange -> {
-                        addConst(Memory.byte(GP64.RBX, displacement = op.offset.toLong()), op.value)
+                    is IOBlock -> {
+                        for (op in block.ops) {
+                            when (op) {
+                                is Input -> {
+                                    mov(GP64.RSI, Immediate(op.offset))
+                                    call("in")
+                                }
+                                is Output -> {
+                                    writeExpr(op.expr, emptyMap(), GP64.RSI)
+                                    call("out")
+                                }
+                            }
+                        }
+                        addConst(GP64.RBX, block.pointerDelta)
                     }
                 }
             }
 
             for (op in program) {
-                writeOp(op)
+                writeBlock(op)
             }
 
-            mov(GP64.RAX, Immediate(sys.exit))
+            mov(GP32.EAX, Immediate(sys.exit))
             mov(GP64.RDI, Immediate(0))
             syscall()
 
             addRaw("section .bss")
-            addRaw("    tape: resb $TAPE_SIZE")
+            addRaw("    tape: resb $tapeSize")
         }
 
         val (outfile, srcfile) = Nasm.compile(s)

@@ -1,6 +1,8 @@
 package dev.rdh.bf
 
-import org.objectweb.asm.*
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Label
 import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.Opcodes.*
 import org.objectweb.asm.commons.CodeSizeEvaluator
@@ -20,17 +22,16 @@ import java.lang.invoke.MethodHandles
 import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
-import kotlin.math.absoluteValue
+import kotlin.math.abs
 import kotlin.random.Random
 
-@JvmName("compile")
-@OptIn(ExperimentalStdlibApi::class)
-fun bfCompile(program: Iterable<BFAffineOp>, opts: SystemRunnerOptions): (Reader, Writer) -> Unit {
-    val className = "BFProgram$${Random.nextInt().toHexString()}"
-    val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
-    cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
+object Compiler : BfRunner {
+    override fun compile(program: Iterable<BfBlockOp>, tapeSize: Int): BfExecutable {
+        cache[program.toList()]?.let { return it }
+        val className = "BFProgram$${Random.nextInt().toHexString()}"
+        val cw = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        cw.visit(V1_5, ACC_PUBLIC or ACC_SUPER, className, null, "java/lang/Object", null)
 
-    if (opts.executable) {
         cw.method(ACC_PUBLIC or ACC_STATIC, "main", desc<Void>(type<Array<String>>())) {
             // new InputStreamReader(System.in)
             new<InputStreamReader>()
@@ -48,278 +49,246 @@ fun bfCompile(program: Iterable<BFAffineOp>, opts: SystemRunnerOptions): (Reader
             invokevirtual<OutputStreamWriter>("flush", desc<Void>())
             areturn<Void>()
 
-            if (opts.debugInfo) {
-                parameter("args")
-            }
+            parameter("args")
         }
-    }
 
-    val tapeSizeIsPowerOf2 = TAPE_SIZE and (TAPE_SIZE - 1) == 0
+        val mw = cw.method(name = "run", descriptor = desc<Void>(type<Reader>(), type<Writer>()))
+        mw.visitCode()
 
-    // method to wrap negative indices
-    if (opts.overflowProtection && !tapeSizeIsPowerOf2) {
-        cw.method(ACC_PRIVATE or ACC_STATIC, "w", "(II)I") {
-            // method signature: private static int w(int num, int length)
-            // return num < 0 ? num + length : num
+        val input = mw.local<Reader>(0)
+        val output = mw.local<Writer>(1)
 
-            val negative = Label()
-            load<Int>(0)
-            iflt(negative)
-            load<Int>(0)
-            areturn<Int>()
-            mark(negative)
-            load<Int>(0)
-            load<Int>(1)
-            iadd
-            areturn<Int>()
+        val tape = mw.local<ByteArray>(2)
+        mw.int(tapeSize)
+        mw.newarray<Byte>()
+        mw.store(tape)
 
-            if (opts.debugInfo) {
-                parameters("num", "length")
-            }
+        // initialize pointer: int
+        val pointer = mw.local<Int>(3)
+        mw.int(tapeSize / 2)
+        mw.store(pointer)
+
+        fun MethodVisitor.addOffset(offset: Int) {
+            if (offset == 0) return
+            int(abs(offset))
+            if (offset >= 0) iadd else isub
         }
-    }
 
-    val mw = cw.method(name = "run", descriptor = desc<Void>(type<Reader>(), type<Writer>()))
-    mw.visitCode()
+        val scratchBase = 4
 
-    val input = mw.local<Reader>(0)
-    val output = mw.local<Writer>(1)
+        // bf code has a lot of repeated loops, so we can reuse the same method
+        val loopCache = mutableMapOf<Loop, String>()
+        var loopI = 1
+        val loopMethodDescriptor = desc<Int>(type<Reader>(), type<Writer>(), type<ByteArray>(), type<Int>())
 
-    val tape = mw.local<ByteArray>(2)
-    mw.int(TAPE_SIZE)
-    mw.newarray<Byte>()
-    mw.store(tape)
+        // loop bodies go in separate functions, because the jvm can't handle large methods well
+        fun makeLoopBody(loop: Loop, writeOp: MethodVisitor.(BfBlockOp) -> Unit): String {
+            return loopCache.getOrPut(loop) {
+                val methodName = "loop$loopI"
+                loopI++
+                cw.method(ACC_PRIVATE or ACC_STATIC, methodName, loopMethodDescriptor) {
+                    for (op in loop.body) {
+                        writeOp(op)
+                    }
 
-    // initialize pointer: int
-    val pointer = mw.local<Int>(3)
-    mw.int(TAPE_SIZE / 2)
-    mw.store(pointer)
+                    load(pointer)
+                    areturn<Int>()
 
-    fun MethodVisitor.addOffset(offset: Int) {
-        if (offset == 0) return
-        int(offset.absoluteValue)
-        if (offset >= 0) iadd else isub
-
-        if (opts.overflowProtection) {
-            if (tapeSizeIsPowerOf2) {
-                int(TAPE_SIZE - 1)
-                iand
-            } else {
-                int(TAPE_SIZE)
-                irem
-
-                if (offset < 0) {
-                    load(tape)
-                    arraylength
-                    invokestatic(className, "w", "(II)I")
-                }
-            }
-        }
-    }
-
-    val scratchBase = 4
-
-    // bf code has a lot of repeated loops, so we can reuse the same method
-    val loopCache = mutableMapOf<BFAffineLoop, String>()
-    var loopI = 1
-    val loopMethodDescriptor = desc<Int>(type<Reader>(), type<Writer>(), type<ByteArray>(), type<Int>())
-
-    // loop bodies go in separate functions, because the jvm can't handle large methods well
-    fun makeLoopBody(loop: BFAffineLoop, writeOp: MethodVisitor.(BFAffineOp) -> Unit): String {
-        return loopCache.getOrPut(loop) {
-            val methodName = "loop$loopI"
-            loopI++
-            cw.method(ACC_PRIVATE or ACC_STATIC, methodName, loopMethodDescriptor) {
-                for (op in loop) {
-                    writeOp(op)
-                }
-
-                load(pointer)
-                areturn<Int>()
-
-                if (opts.debugInfo) {
                     parameters("in", "out", "tape", "pointer")
                 }
-            }
-            methodName
-        }
-    }
-
-    fun MethodVisitor.shiftPointer(delta: Int) {
-        when {
-            delta == 0 -> Unit
-            !opts.overflowProtection && delta in Short.MIN_VALUE..Short.MAX_VALUE -> inc(pointer, delta)
-            else -> {
-                load(pointer)
-                addOffset(delta)
-                store(pointer)
+                methodName
             }
         }
-    }
 
-    fun MethodVisitor.loadCell(offset: Int) {
-        load(tape)
-        load(pointer)
-        addOffset(offset)
-        baload
-    }
-
-    fun MethodVisitor.writeExpr(expr: BFAffineExpr, localByRef: Map<Int, LocalVar>) {
-        if (expr.constant != 0 || expr.terms.isEmpty()) {
-            int(expr.constant)
-        }
-
-        val liveTerms = expr.terms.filter { it.coefficient != 0 }
-        for ((i, term) in liveTerms.withIndex()) {
-            val local = localByRef[term.offset]
-            if (local != null) {
-                load(local)
-            } else {
-                loadCell(term.offset)
-            }
-            if (term.coefficient.absoluteValue != 1) {
-                int(term.coefficient.absoluteValue)
-                imul
-            }
-            if (i != 0 || expr.constant != 0) {
-                if (term.coefficient > 0) iadd else isub
-            } else {
-                if (term.coefficient < 0) ineg
-            }
-        }
-    }
-
-    fun MethodVisitor.writeSegment(segment: BFAffineSegment): Unit = when (segment) {
-        is BFAffineWriteBatch -> {
-            val refUseCounts = mutableMapOf<Int, Int>()
-            for (write in segment.writes) {
-                for (term in write.expr.terms) {
-                    if (term.coefficient != 0) {
-                        refUseCounts[term.offset] = (refUseCounts[term.offset] ?: 0) + 1
-                    }
+        fun MethodVisitor.shiftPointer(delta: Int) {
+            when (delta) {
+                0 -> Unit
+                in Short.MIN_VALUE..Short.MAX_VALUE -> inc(pointer, delta)
+                else -> {
+                    load(pointer)
+                    addOffset(delta)
+                    store(pointer)
                 }
             }
-
-            val refsToCache = mutableSetOf<Int>()
-            refsToCache += refUseCounts.filterValues { it > 1 }.keys
-
-            val written = mutableListOf<Int>()
-            for (write in segment.writes) {
-                for (term in write.expr.terms) {
-                    if (term.coefficient == 0 || term.offset in refsToCache) continue
-                    // if the term is used multiple times or will get overwritten later, cache it in a local variable
-                    // otherwise it's faster to just load it from the tape once
-                    if (written.any { it == term.offset }) {
-                        refsToCache += term.offset
-                    }
-                }
-                written += write.offset
-            }
-
-            val localByRef = mutableMapOf<Int, LocalVar>()
-            for ((i, ref) in refsToCache.withIndex()) {
-                val local = local<Int>(scratchBase + i)
-                localByRef[ref] = local
-                loadCell(ref)
-                store(local)
-            }
-
-            for (write in segment.writes) {
-                load(tape)
-                load(pointer)
-                addOffset(write.offset)
-                writeExpr(write.expr, localByRef)
-                bastore
-            }
         }
 
-        is BFAffineOutput -> {
-            load(output)
-            loadCell(segment.offset)
-            int(0xFF)
-            iand
-            invokevirtual<Writer>("write", desc<Void>(type<Int>()))
-        }
-
-        is BFAffineInput -> {
+        fun MethodVisitor.loadCell(offset: Int) {
             load(tape)
             load(pointer)
-            addOffset(segment.offset)
-            load(input)
-            invokevirtual<Reader>("read", desc<Int>())
-            bastore
+            addOffset(offset)
+            baload
         }
-    }
 
-    fun MethodVisitor.writeOp(op: BFAffineOp): Unit = when (op) {
-        is BFAffineBlock -> {
-            shiftPointer(op.baseShift)
-            for (segment in op.segments) {
-                writeSegment(segment)
+        fun MethodVisitor.writeExpr(expr: Expression, localByRef: Map<Int, LocalVar>) {
+            if (expr.constant != 0 || expr.terms.isEmpty()) {
+                int(expr.constant)
             }
-            shiftPointer(op.pointerDelta - op.baseShift)
-        }
 
-        is BFAffineLoop -> {
-            val loopStart = Label()
-            val loopEnd = Label()
-            mark(loopStart)
-            // if (tape[pointer] == 0) break
-            loadCell(0)
-            ifeq(loopEnd)
+            val liveTerms = expr.terms.filter { it.coeff != 0 }
+            for ((i, term) in liveTerms.withIndex()) {
 
-            if (op.any { it is BFAffineLoop }) {
-                val methodName = makeLoopBody(op) { writeOp(it) }
+                // Build the product: |coeff| * cell[off0] * cell[off1] * ...
+                if (abs(term.coeff) != 1) {
+                    int(abs(term.coeff))
+                    for (off in term.offsets) {
+                        val local = localByRef[off]
+                        if (local != null) load(local) else loadCell(off)
+                        imul
+                    }
+                } else {
+                    // |coeff| == 1: start with first cell, multiply rest
+                    for ((j, off) in term.offsets.withIndex()) {
+                        val local = localByRef[off]
+                        if (local != null) load(local) else loadCell(off)
+                        if (j > 0) imul
+                    }
+                }
 
-                // call the loop body
-                load(input)
-                load(output)
-                load(tape)
-                load(pointer)
-                invokestatic(className, methodName, loopMethodDescriptor)
-                store(pointer)
-            } else {
-                for (op in op) {
-                    writeOp(op)
+                // Accumulate into running sum
+                if (i != 0 || expr.constant != 0) {
+                    if (term.coeff > 0) iadd else isub
+                } else {
+                    if (term.coeff < 0) ineg
                 }
             }
-
-            // jump back to the start of the loop
-            goto(loopStart)
-            mark(loopEnd)
         }
-    }
 
-    for (op in program) {
-        mw.writeOp(op)
-    }
+        fun MethodVisitor.writeBlock(block: BfBlockOp): Unit = when (block) {
+            is WriteBlock -> {
+                shiftPointer(block.workingOffset)
 
-    if (opts.debugInfo) {
+                val refsToCache = mutableSetOf<Int>()
+                val refsUsed = mutableSetOf<Int>()
+                val written = mutableSetOf<Int>()
+                for (write in block.writes) {
+                    for (term in write.expr.terms) {
+                        if (term.coeff == 0) continue
+                        for (off in term.offsets) {
+                            if ((off !in refsToCache && off in written) || !refsUsed.add(off)) {
+                                refsToCache += off
+                            }
+                        }
+                    }
+                    written += write.offset
+                }
+
+                val localByRef = mutableMapOf<Int, LocalVar>()
+                for ((i, ref) in refsToCache.withIndex()) {
+                    val local = local<Int>(scratchBase + i)
+                    localByRef[ref] = local
+                    loadCell(ref)
+                    store(local)
+                }
+
+                for (write in block.writes) {
+                    load(tape)
+                    load(pointer)
+                    addOffset(write.offset)
+                    writeExpr(write.expr, localByRef)
+                    bastore
+                }
+
+                shiftPointer(block.pointerDelta - block.workingOffset)
+            }
+
+            is IOBlock -> {
+                for (op in block.ops) {
+                    when (op) {
+                        is Output -> {
+                            load(output)
+                            writeExpr(op.expr, emptyMap())
+                            invokevirtual<Writer>("write", desc<Void>(type<Int>()))
+                        }
+                        is Input -> {
+                            load(tape)
+                            load(pointer)
+                            addOffset(op.offset)
+                            load(input)
+                            invokevirtual<Reader>("read", desc<Int>())
+                            bastore
+                        }
+                    }
+                }
+                shiftPointer(block.pointerDelta)
+            }
+
+            is Loop -> {
+                val loopStart = Label()
+                val loopEnd = Label()
+                mark(loopStart)
+                // if (tape[pointer] == 0) break
+                loadCell(0)
+                ifeq(loopEnd)
+
+                if (block.body.any { it is Loop || it is Conditional }) {
+                    val methodName = makeLoopBody(block) { writeBlock(it) }
+
+                    // call the loop body
+                    load(input)
+                    load(output)
+                    load(tape)
+                    load(pointer)
+                    invokestatic(className, methodName, loopMethodDescriptor)
+                    store(pointer)
+                } else {
+                    for (op in block.body) {
+                        writeBlock(op)
+                    }
+                }
+
+                // jump back to the start of the loop
+                goto(loopStart)
+                mark(loopEnd)
+            }
+
+            is Conditional -> {
+                val condEnd = Label()
+                // if (tape[pointer] == 0) skip
+                loadCell(0)
+                ifeq(condEnd)
+
+                for (op in block.body) {
+                    writeBlock(op)
+                }
+
+                mark(condEnd)
+            }
+        }
+
+        for (op in program) {
+            mw.writeBlock(op)
+        }
+
         mw.parameters("in", "out")
         mw.locals(
             tape to "tape",
             pointer to "pointer",
         )
+
+        mw.areturn<Void>()
+        mw.visitMaxs(0, 0)
+        mw.visitEnd()
+        cw.visitEnd()
+
+        val bytes = cw.toByteArray()
+
+        if (System.getenv("BF_EXPORT") != null) {
+            val path = Path(".bf.out").resolve("${className}.class")
+            path.parent.createDirectories()
+            path.writeBytes(bytes)
+        }
+
+        warnCodeSize(bytes)
+
+        val cl = loadClass(bytes)
+        val lookup = MethodHandles.lookup()
+        val handle = lookup.findStatic(cl, "run", mtype<Void>(type<Reader>(), type<Writer>()).methodType)
+        val lambda = convertHandle(handle)
+        return BfExecutable { input, output -> lambda(input.reader(), output.writer()) }
+            .also { cache[program.toList()] = it }
     }
 
-    mw.areturn<Void>()
-    mw.visitMaxs(0, 0)
-    mw.visitEnd()
-    cw.visitEnd()
-    val bytes = cw.toByteArray()
-
-    if (opts.export) {
-        val path = Path(".bf.out").resolve("${className}.class")
-        path.parent.createDirectories()
-        path.writeBytes(bytes)
-    }
-
-    warnCodeSize(bytes)
-
-    val cl = loadClass(bytes)
-    val lookup = MethodHandles.lookup()
-    val method = lookup.findStatic(cl, "run", mtype<Void>(type<Reader>(), type<Writer>()).methodType)
-    return convertHandle(method)
+    private val cache: MutableMap<List<BfBlockOp>, BfExecutable> = mutableMapOf()
 }
 
 private fun loadClass(bytes: ByteArray): Class<*> {

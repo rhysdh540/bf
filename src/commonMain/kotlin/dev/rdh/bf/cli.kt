@@ -1,28 +1,33 @@
 package dev.rdh.bf
 
-import dev.rdh.bf.opt.bfOptimise
+import dev.rdh.bf.util.LineEditor
 import kotlin.time.measureTime
 import kotlin.time.measureTimedValue
 
-abstract class CommandLine {
-    protected abstract fun readFile(path: String): String
+private const val DEFAULT_TAPE_SIZE = 1 shl 15
 
+abstract class CommandLine {
     protected abstract val stdin: BfInput
     protected abstract val stdout: BfOutput
     protected abstract val stderr: BfOutput
+    protected abstract fun exit(code: Int): Nothing
 
     protected abstract val nativeCodeType: String
+    protected abstract val systemRunner: BfRunner?
+    protected abstract val terminal: Terminal
+    protected abstract val fs: FileSystem
 
     private var compiled = false
-    private var export = false
-    private var optimise = false
     private var printTime = false
     private var nextIsString = false
+    private var tapeSize = DEFAULT_TAPE_SIZE
+    protected var autoExec = false
 
-    private val options: List<Option> by lazy {
-        listOf(
+    protected val options: List<Option> by lazy {
+        listOfNotNull(
             Option("help", 'h', "Show this help message") {
                 stderr.write("Usage: bf [options] <program.b>\n")
+                stderr.write("run with no arguments to enter interactive mode\n")
                 stderr.write("Options:\n")
                 for (option in options) {
                     stderr.write("       --${option.name}")
@@ -32,21 +37,53 @@ abstract class CommandLine {
                     stderr.write("\n               ${option.description}\n")
                 }
             },
-            Option("optimise", 'O', "Optimise the intermediate representation of the following programs") { optimise = true },
-            Option("compile", 'c', "Compile the following programs to $nativeCodeType") { compiled = true },
-            Option("interpret", 'i', "Run the following programs in interpreted mode (default)") { compiled = false },
-            Option("export", 'E', "Export the following programs to a file in `.bf.out` (if --compiled)") { export = true },
-            Option("no-export", null, "Do not export the following programs") { export = false },
-            Option("time", 't', "Print the time taken to execute the following programs") { printTime = true },
-            Option("eval", 'e', "Evaluate the next argument directly as a Brainfuck program") { nextIsString = true }
+            Option("compile", 'c', "if true, compile the following programs to $nativeCodeType; else run in interpreted mode (default)") {
+                compiled = it?.let { truthy(it) } ?: true
+            }.takeIf { systemRunner != null },
+            Option("tape-size", 's', "Set the tape size for the following programs (default: $DEFAULT_TAPE_SIZE)") {
+                tapeSize = it?.toIntOrNull() ?: run {
+                    stderr.write("Invalid tape size: $it\n")
+                    exit(1)
+                }
+            },
+            Option("time", 't', "Print the time taken to execute the following programs") {
+                printTime = it?.let { truthy(it) } ?: true
+            },
+            Option("eval", 'e', "Evaluate the next argument directly as a Brainfuck program") {
+                if (it != null) {
+                    stderr.write("Warning: --eval does not take an argument, ignoring '$it'\n")
+                }
+                nextIsString = true
+            }
         )
     }
 
     fun run(args: Array<String>) {
         if (args.isEmpty()) {
-            options.first { it.name == "help" }.action()
-            return
+            repl()
         }
+        exit(processArgs(args))
+    }
+
+    protected open fun repl(): Nothing {
+        autoExec = true
+        val editor = LineEditor(terminal, stderr, fs) {
+            options.map { "--${it.name}" }
+        }
+
+        while (true) {
+            val line = editor.readLine("> ") ?: break
+            if (line.isBlank()) continue
+            try {
+                processArgs(line.trim().split("\\s+".toRegex()).toTypedArray())
+            } catch (e: Exception) {
+                stderr.write("${e::class.simpleName}: ${e.message}\n")
+            }
+        }
+        exit(0)
+    }
+
+    protected fun processArgs(args: Array<String>): Int {
         for (arg in args) {
             if (nextIsString) {
                 nextIsString = false
@@ -58,24 +95,40 @@ abstract class CommandLine {
                 continue
             }
 
-            exec(readFile(arg))
+            if (arg.getOrNull(0) == '-' && arg.length > 2) {
+                var found = false
+                for (inner in arg.drop(1)) {
+                    if (options.any { it.evaluate("-$inner") }) {
+                        found = true
+                    }
+                }
+
+                if (found) continue
+            }
+
+            val content = fs.readFile(arg).getOrNull()
+            if (content != null) {
+                exec(content)
+            } else if (autoExec) {
+                exec(arg)
+            } else {
+                stderr.write("Error reading file '$arg'\n")
+                return 1
+            }
         }
+
+        return 0
     }
 
-    private fun exec(literal: String) {
-        val runner = if (compiled) {
-            systemRunner(SystemRunnerOptions(overflowProtection = false, export = export))
-        } else {
-            InterpreterRunner
-        }
+    protected fun exec(literal: String) {
+        val program = Parser.parse(literal)
 
-        var program = bfParse(literal)
-        if (optimise)
-            program = bfOptimise(program)
+        val runner = if (compiled) systemRunner!! else Interpreter
 
-        val (executable, cTime) = measureTimedValue { runner.compile(program) }
+        val (executable, cTime) = measureTimedValue { runner.compile(program, tapeSize) }
 
         val time = measureTime { executable.run(stdin, stdout) }
+        stdout.flush()
 
         if (printTime) {
             stderr.write("Compile time: ${formatTime(cTime)}\n")
@@ -92,19 +145,37 @@ abstract class CommandLine {
             "${milliseconds}ms"
         }
     }
+
+    private fun truthy(s: String): Boolean {
+        return s.lowercase() in setOf("true", "1", "yes", "y", "on")
+    }
 }
 
-private data class Option(
+data class Option(
     val name: String,
     val short: Char?,
     val description: String,
-    val action: () -> Unit
+    val action: (String?) -> Unit
 ) {
     fun evaluate(arg: String): Boolean {
-        if (arg == "--$name" || (short != null && arg == "-$short")) {
-            action()
+        val parts = arg.split('=', limit = 2)
+        if (parts[0] == "--$name" || (short != null && parts[0] == "-$short")) {
+            action(parts.getOrNull(1))
             return true
         }
         return false
     }
+}
+
+interface FileSystem {
+    fun readFile(path: String): Result<String>
+    fun listFiles(dir: String): List<String>
+    fun exists(path: String): Boolean
+    fun isDirectory(path: String): Boolean
+}
+
+interface Terminal {
+    fun enableRawMode()
+    fun disableRawMode()
+    fun readRawByte(): Int
 }

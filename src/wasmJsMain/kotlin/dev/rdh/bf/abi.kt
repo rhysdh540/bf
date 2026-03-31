@@ -2,7 +2,6 @@
 
 package dev.rdh.bf
 
-import dev.rdh.bf.opt.bfOptimise
 import kotlin.js.ExperimentalJsExport
 import kotlin.js.JsExport
 import kotlin.js.JsName
@@ -29,24 +28,11 @@ private external fun hostFlush()
 
 private const val PROGRAM_CACHE_LIMIT = 8
 
-private data class ProgramKey(
-    val source: String,
-    val optimise: Boolean,
-)
-
-private val programHandles = linkedMapOf<ProgramKey, Int>()
+private val programHandles = linkedMapOf<String, Int>()
 private val compiledPrograms = mutableMapOf<Int, BfExecutable>()
 private var nextProgramHandle = 1
 
-private fun buildProgram(source: String, optimise: Boolean): List<BFOperation> {
-    var program = bfParse(source)
-    if (optimise) {
-        program = bfOptimise(program)
-    }
-    return program
-}
-
-private fun rememberProgram(key: ProgramKey, executable: BfExecutable): Int {
+private fun rememberProgram(key: String, executable: BfExecutable): Int {
     if (programHandles.size >= PROGRAM_CACHE_LIMIT) {
         val eldest = programHandles.entries.firstOrNull()
         if (eldest != null) {
@@ -63,18 +49,17 @@ private fun rememberProgram(key: ProgramKey, executable: BfExecutable): Int {
 
 @JsExport
 @JsName("compileProgram")
-fun compileProgram(source: String, optimise: Boolean): Int {
-    val key = ProgramKey(source = source, optimise = optimise)
-    val cached = programHandles[key]
+fun compileProgram(source: String): Int {
+    val cached = programHandles[source]
     if (cached != null) {
         // touch key so frequently used programs are evicted last
-        programHandles.remove(key)
-        programHandles[key] = cached
+        programHandles.remove(source)
+        programHandles[source] = cached
         return cached
     }
 
-    val executable = systemRunner().compile(buildProgram(source, optimise))
-    return rememberProgram(key, executable)
+    val executable = Compiler.compile(Parser.parse(source), 1 shl 15)
+    return rememberProgram(source, executable)
 }
 
 @JsExport
@@ -95,6 +80,6 @@ fun clearProgramCache() {
 
 @JsExport
 @JsName("run")
-fun run(source: String, optimise: Boolean) {
-    executeProgram(compileProgram(source, optimise))
+fun run(source: String) {
+    executeProgram(compileProgram(source))
 }
