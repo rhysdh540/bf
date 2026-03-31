@@ -121,7 +121,7 @@ abstract class CommandLine {
     }
 
     protected fun exec(literal: String) {
-        val program = Parser.parse(literal)
+        val (program, ptime) = measureTimedValue { Parser.parse(literal) }
 
         val runner = if (compiled) systemRunner!! else Interpreter
 
@@ -131,8 +131,9 @@ abstract class CommandLine {
         stdout.flush()
 
         if (printTime) {
-            stderr.write("Compile time: ${formatTime(cTime)}\n")
-            stderr.write("Execution time: ${formatTime(time)}\n")
+            stderr.write("\nparse / compile / execute:\n")
+            stderr.write("${formatTime(ptime)} / ${formatTime(cTime)} / ${formatTime(time)}\n")
+            stderr.flush()
         }
     }
 
