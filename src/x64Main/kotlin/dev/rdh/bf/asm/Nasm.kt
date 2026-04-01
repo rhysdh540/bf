@@ -19,32 +19,13 @@ class Nasm : Assembler {
         s.append("    ").appendLine(this)
     }
 
-    private fun reqSame(dest: DataDestination, src: DataSource) {
-        require(dest !is Memory || src !is Memory) { "cannot mov memory to memory" }
-        val destWidth = when (dest) {
-            is Register -> dest.width
-            is Memory -> dest.width
-            else -> throw IllegalArgumentException()
-        }
-        val srcWidth = when (src) {
-            is Register -> src.width
-            is Memory -> src.width
-            else -> destWidth
-        }
-        require(srcWidth == destWidth) { "source $src is different width than dest $dest" }
-    }
-
     override fun mov(dest: DataDestination, src: DataSource) {
         reqSame(dest, src)
         +"mov ${dest.asString()}, ${src.asString()}"
     }
 
     override fun movzx(dest: Register, src: DataSource) {
-        val srcWidth = when (src) {
-            is Register -> src.width
-            is Memory -> src.width
-            else -> throw IllegalArgumentException()
-        }
+        val srcWidth = src.widthOr(null)
         require(dest.width > srcWidth) { "movzx dest $dest must be wider than source $src" }
         require(srcWidth <= 16u) { "movzx source must be byte or word" }
         +"movzx ${dest.asString()}, ${src.asString()}"

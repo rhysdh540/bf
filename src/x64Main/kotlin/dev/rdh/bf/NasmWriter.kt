@@ -49,6 +49,7 @@ object NasmWriter : BfRunner {
             mov(GP64.RBP, GP64.RSP)
 
             var loopCounter = 0
+            var condCounter = 0
 
             fun writeExpr(expr: Expression, offsetToData: Map<Int, DataSource>, dest: GP64) {
                 val temp = if (dest == GP64.RCX) GP64.RAX else GP64.RCX
@@ -122,13 +123,13 @@ object NasmWriter : BfRunner {
                     }
 
                     is Conditional -> {
-                        val c = loopCounter++
+                        val l = "C${condCounter++}"
                         cmp(Memory.byte(GP64.RBX), Immediate(0))
-                        je("LC$c")
+                        je(l)
                         for (op in block.body) {
                             writeBlock(op)
                         }
-                        mark("LC$c")
+                        mark(l)
                     }
                     is IOBlock -> {
                         for (op in block.ops) {
