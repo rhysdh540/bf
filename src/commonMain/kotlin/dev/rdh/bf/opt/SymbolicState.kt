@@ -2,14 +2,22 @@ package dev.rdh.bf.opt
 
 import dev.rdh.bf.*
 
-internal class SymbolicState(private var cellDefault: (Int) -> Expr) {
+internal class SymbolicState(
+    private var cellDefault: (Int) -> Expr,
+    private val exactCells: Boolean = true,
+) {
     private val state = mutableMapOf<Int, Expr>()
     private val temps = mutableMapOf<Temp, Expr>()
 
     var ptrOffset: Int = 0
         private set
 
-    fun readCell(absOffset: Int): Expr = (state[absOffset] ?: cellDefault(absOffset)).truncateKnownByte()
+    fun readCell(absOffset: Int): Expr = state[absOffset] ?: cellDefault(absOffset)
+
+    fun readCellForControl(absOffset: Int): Expr = when (val value = readCell(absOffset)) {
+        is Cell -> value
+        else -> value.constantValue()?.let(::truncateByte)?.let(::Const) ?: Cell(absOffset)
+    }
 
     fun readTemp(temp: Temp): Expr? = temps[temp]
 
@@ -17,6 +25,8 @@ internal class SymbolicState(private var cellDefault: (Int) -> Expr) {
         substitute(expr, ptrOffset, ::readCell, ::readTemp)
 
     fun readRelative(basePtr: Int, offset: Int): Expr = shiftExpr(readCell(basePtr + offset), -basePtr)
+
+    fun readRelativeForControl(basePtr: Int, offset: Int): Expr = shiftExpr(readCellForControl(basePtr + offset), -basePtr)
 
     fun move(delta: Int) {
         ptrOffset += delta
@@ -54,10 +64,6 @@ internal class SymbolicState(private var cellDefault: (Int) -> Expr) {
         return true
     }
 
-    fun setCell(absOffset: Int, value: Expr) {
-        writeCell(absOffset, value)
-    }
-
     fun writes(): Map<Int, Expr> = state.toMap()
 
     fun forgetCells(offsets: Iterable<Int>) {
@@ -86,11 +92,16 @@ internal class SymbolicState(private var cellDefault: (Int) -> Expr) {
         cellDefault = { Cell(it) }
     }
 
-    private fun writeCell(absOffset: Int, value: Expr) {
-        if (value == cellDefault(absOffset)) {
+    fun writeCell(absOffset: Int, value: Expr) {
+        val normalized = if (exactCells) {
+            byte(value)
+        } else {
+            relaxByte(value).truncateKnownByte()
+        }
+        if (normalized == cellDefault(absOffset)) {
             state.remove(absOffset)
         } else {
-            state[absOffset] = value
+            state[absOffset] = normalized
         }
     }
 }

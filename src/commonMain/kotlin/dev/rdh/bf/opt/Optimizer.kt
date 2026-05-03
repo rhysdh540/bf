@@ -228,7 +228,7 @@ object Optimizer {
     }
 
     private fun extractCandidate(body: List<Op>, entryCell: (Int) -> Expr): Candidate? {
-        val state = SymbolicState(entryCell)
+        val state = SymbolicState(entryCell, exactCells = false)
 
         fun execute(ops: List<Op>): Boolean {
             for (op in ops) {
@@ -236,7 +236,7 @@ object Optimizer {
                     is MovePtr, is SetTemp, is Store -> if (!state.apply(op)) return false
 
                     is Conditional -> {
-                        val guard = state.readCell(state.ptrOffset + op.offset)
+                        val guard = state.readCellForControl(state.ptrOffset + op.offset)
                         when (guard) {
                             Const.ZERO -> {}
                             is Const -> if (!execute(op.body)) return false
@@ -246,10 +246,10 @@ object Optimizer {
 
                     is Loop -> {
                         val basePtr = state.ptrOffset
-                        when (val guard = state.readCell(basePtr + op.offset)) {
+                        when (val guard = state.readCellForControl(basePtr + op.offset)) {
                             Const.ZERO -> {}
                             else -> {
-                                val summary = analyzeLoop(op.body) { offset -> state.readRelative(basePtr, offset) } ?: return false
+                                val summary = analyzeLoop(op.body) { offset -> state.readRelativeForControl(basePtr, offset) } ?: return false
                                 if (!applyLoopSummary(state, basePtr, summary, guard)) return false
                             }
                         }
@@ -278,6 +278,7 @@ object Optimizer {
         is Add -> expr.terms.fold(Const.ZERO as Expr) { acc, term -> acc + substituteOffsets(term, mapping) }
         is Mul -> expr.factors.fold(Const.ONE as Expr) { acc, factor -> acc * substituteOffsets(factor, mapping) }
         is Neg -> -substituteOffsets(expr.value, mapping)
+        is ByteTruncate -> byte(substituteOffsets(expr.value, mapping))
         is ExactDiv -> substituteOffsets(expr.numerator, mapping) / expr.divisor
         is Choose -> choose(substituteOffsets(expr.value, mapping), expr.degree)
     }
@@ -300,6 +301,11 @@ object Optimizer {
             .fold(Recurrence.constant(Const.ZERO)) { acc, recurrence -> acc + recurrence }
 
         is Neg -> -(toRecurrence(expr.value, solved, modifiedOffsets) ?: return null)
+        is ByteTruncate -> {
+            val value = toRecurrence(expr.value, solved, modifiedOffsets) ?: return null
+            if (!value.isConstant) return null
+            Recurrence.constant(byte(value.constantTerm))
+        }
         is Mul -> multiplyRecurrences(
             expr.factors.map { toRecurrence(it, solved, modifiedOffsets) ?: return null }
         )

@@ -71,7 +71,7 @@ object Parser {
         fun materializePending() {
             val writes = orderWrites(
                 state.writes()
-                    .map { (offset, expr) -> Store(offset, expr) },
+                    .map { (offset, expr) -> Store(offset, stripTopByte(expr)) },
                 Store::offset,
                 Store::value,
             )
@@ -97,19 +97,18 @@ object Parser {
                 is Read -> {
                     val absOffset = state.ptrOffset + op.offset
                     lowered += Read(absOffset)
-                    state.setCell(absOffset, Cell(absOffset))
+                    state.writeCell(absOffset, Cell(absOffset))
                 }
 
                 is Write -> {
                     val value = state.eval(op.value) ?: return stopWithRaw(index)
-                    lowered += Write(value)
+                    lowered += Write(stripTopByte(value))
                 }
 
                 is Conditional -> {
                     val basePtr = state.ptrOffset
-                    val guard = state.readCell(basePtr + op.offset)
-                    when (guard) {
-                        Const(0) -> {}
+                    when (state.readCellForControl(basePtr + op.offset)) {
+                        Const.ZERO -> {}
                         is Const -> {
                             if (op.body.any { it !is MovePtr && it !is SetTemp && it !is Store }) {
                                 return stopWithRaw(index)
@@ -134,11 +133,10 @@ object Parser {
 
                 is Loop -> {
                     val basePtr = state.ptrOffset
-                    val guard = state.readCell(basePtr + op.offset)
-                    when (guard) {
-                        Const(0) -> {}
+                    when (val guard = state.readCellForControl(basePtr + op.offset)) {
+                        Const.ZERO -> {}
                         else -> {
-                            val summary = Optimizer.analyzeLoop(op.body) { offset -> state.readRelative(basePtr, offset) }
+                            val summary = Optimizer.analyzeLoop(op.body) { offset -> state.readRelativeForControl(basePtr, offset) }
 
                             when {
                                 summary != null && summary.prologue.isEmpty() -> {
@@ -203,18 +201,18 @@ object Parser {
                 add(SetTemp(temp, Cell(offset)))
             }
             for (store in stores) {
-                add(Store(store.offset, substituteCells(store.value, snapshots)))
+                add(Store(store.offset, stripTopByte(substituteCells(store.value, snapshots))))
             }
         }
     }
 
     private fun substituteCells(expr: Expr, snapshots: Map<Int, Temp>): Expr = when (expr) {
-        is Const -> expr
+        is Const, is GetTemp -> expr
         is Cell -> snapshots[expr.offset]?.let(::GetTemp) ?: expr
-        is GetTemp -> expr
         is Add -> expr.terms.fold(Const.ZERO as Expr) { acc, term -> acc + substituteCells(term, snapshots) }
         is Mul -> expr.factors.fold(Const.ONE as Expr) { acc, factor -> acc * substituteCells(factor, snapshots) }
         is Neg -> -substituteCells(expr.value, snapshots)
+        is ByteTruncate -> byte(substituteCells(expr.value, snapshots))
         is ExactDiv -> substituteCells(expr.numerator, snapshots) / expr.divisor
         is Choose -> choose(substituteCells(expr.value, snapshots), expr.degree)
     }

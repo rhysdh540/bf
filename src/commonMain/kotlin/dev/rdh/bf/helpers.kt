@@ -11,6 +11,71 @@ internal fun choose(value: Expr, degree: Int): Expr {
     }
 }
 
+private fun collapseUnderByte(value: Expr): Expr = when (value) {
+    is ByteTruncate -> collapseUnderByte(value.value)
+    is Add -> value.terms.fold(Const.ZERO as Expr) { acc, term -> acc + collapseUnderByte(term) }
+    is Mul -> value.factors.fold(Const.ONE as Expr) { acc, factor -> acc * collapseUnderByte(factor) }
+    is Neg -> -collapseUnderByte(value.value)
+    else -> value
+}
+
+private fun Expr.isByteLinear(): Boolean = when (this) {
+    is Const, is Cell, is GetTemp -> true
+    is Add -> terms.all { it.isByteLinear() }
+    is Neg -> value.isByteLinear()
+    is Mul -> {
+        var nonConstFactors = 0
+        for (factor in factors) {
+            when (factor) {
+                is Const -> {}
+                else -> {
+                    if (!factor.isByteLinear()) return false
+                    nonConstFactors++
+                    if (nonConstFactors > 1) return false
+                }
+            }
+        }
+        true
+    }
+
+    is ByteTruncate -> value.isByteLinear()
+    is ExactDiv, is Choose -> false
+}
+
+internal fun byte(value: Expr): Expr = when (value) {
+    is Const -> Const(truncateByte(value.value.toLong()))
+    is Cell -> value
+    is ByteTruncate -> byte(value.value)
+    else -> {
+        val reduced = collapseUnderByte(value)
+        val constant = reduced.constantValue()
+        if (constant != null) {
+            Const(truncateByte(constant))
+        } else if (reduced is Cell) {
+            reduced
+        } else if (reduced.isByteLinear()) {
+            reduced
+        } else {
+            ByteTruncate(reduced)
+        }
+    }
+}
+
+internal fun relaxByte(value: Expr): Expr = when (value) {
+    is Const, is Cell, is GetTemp -> value
+    is Add -> value.terms.fold(Const.ZERO as Expr) { acc, term -> acc + relaxByte(term) }
+    is Mul -> value.factors.fold(Const.ONE as Expr) { acc, factor -> acc * relaxByte(factor) }
+    is Neg -> -relaxByte(value.value)
+    is ByteTruncate -> value.value.constantValue()?.let { Const(truncateByte(it)) } ?: relaxByte(value.value)
+    is ExactDiv -> relaxByte(value.numerator) / value.divisor
+    is Choose -> choose(relaxByte(value.value), value.degree)
+}
+
+internal fun stripTopByte(value: Expr): Expr = when (value) {
+    is ByteTruncate -> value.value
+    else -> value
+}
+
 internal fun Expr.constantValue(): Long? = when (this) {
     is Const -> value.toLong()
     is Cell, is GetTemp -> null
@@ -31,6 +96,7 @@ internal fun Expr.constantValue(): Long? = when (this) {
     }
 
     is Neg -> -(value.constantValue() ?: return null)
+    is ByteTruncate -> truncateByte(value.constantValue() ?: return null).toLong()
     is ExactDiv -> exactDivide(numerator.constantValue() ?: return null, divisor.toLong())
     is Choose -> chooseConst(value.constantValue() ?: return null, degree)
 }
@@ -54,6 +120,7 @@ internal fun shiftExpr(expr: Expr, delta: Int): Expr = when {
         is Add -> expr.terms.fold(Const.ZERO as Expr) { acc, term -> acc + shiftExpr(term, delta) }
         is Mul -> expr.factors.fold(Const.ONE as Expr) { acc, factor -> acc * shiftExpr(factor, delta) }
         is Neg -> -shiftExpr(expr.value, delta)
+        is ByteTruncate -> byte(shiftExpr(expr.value, delta))
         is ExactDiv -> shiftExpr(expr.numerator, delta) / expr.divisor
         is Choose -> choose(shiftExpr(expr.value, delta), expr.degree)
     }
@@ -66,6 +133,7 @@ internal fun Expr.readOffsets(): List<Int> = when (this) {
     is Add -> terms.flatMap { it.readOffsets() }
     is Mul -> factors.flatMap { it.readOffsets() }
     is Neg -> value.readOffsets()
+    is ByteTruncate -> value.readOffsets()
     is ExactDiv -> numerator.readOffsets()
     is Choose -> value.readOffsets()
 }
@@ -96,6 +164,7 @@ internal fun substitute(
     }
 
     is Neg -> -(substitute(expr.value, ptrOffset, readCell, readTemp) ?: return null)
+    is ByteTruncate -> byte(substitute(expr.value, ptrOffset, readCell, readTemp) ?: return null)
     is ExactDiv -> (substitute(expr.numerator, ptrOffset, readCell, readTemp) ?: return null) / expr.divisor
     is Choose -> choose(substitute(expr.value, ptrOffset, readCell, readTemp) ?: return null, expr.degree)
 }

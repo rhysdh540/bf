@@ -117,6 +117,11 @@ data class Neg(val value: Expr) : Expr {
 }
 
 /**
+ * explicit modulo-256 truncation back into tape-cell space
+ */
+data class ByteTruncate(val value: Expr) : Expr
+
+/**
  * **EXACT** division in the widened domain before the eventual byte truncation
  */
 data class ExactDiv(val numerator: Expr, val divisor: Int) : Expr {

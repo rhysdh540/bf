@@ -55,6 +55,7 @@ object Interpreter : BfRunner {
         is Add -> expr.terms.sumOf { eval(it) }
         is Mul -> expr.factors.fold(1L) { acc, factor -> acc * eval(factor) }
         is Neg -> -eval(expr.value)
+        is ByteTruncate -> truncateByte(eval(expr.value)).toLong()
         is ExactDiv -> exactDivide(eval(expr.numerator), expr.divisor.toLong())
         is Choose -> chooseConst(eval(expr.value), expr.degree)
     }

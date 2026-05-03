@@ -17,4 +17,12 @@ class ExprTest {
         assertEquals(Const(6), Const(42) / 7)
         assertEquals(ExactDiv(Const(5), 2), Const(5) / 2)
     }
+
+    @Test
+    fun `byte truncation stays explicit for symbolic values`() {
+        assertEquals(Const(1), byte(Const(257)))
+        assertEquals(Cell(4), byte(Cell(4)))
+        assertEquals(Add(Cell(0), Const(257)), byte(Add(Cell(0), Const(257))))
+        assertEquals(ByteTruncate(Choose(Cell(0), 2)), byte(Choose(Cell(0), 2)))
+    }
 }

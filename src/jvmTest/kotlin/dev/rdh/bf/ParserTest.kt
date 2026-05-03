@@ -71,6 +71,13 @@ class ParserTest {
     }
 
     @Test
+    fun `long example preserves its output byte`() {
+        val output = ByteOutput()
+        Interpreter.run(Parser.parse(resource("long.b")), tapeSize = 1 shl 15, input = NullInput, output = output)
+        assertEquals(listOf(202), output.bytes)
+    }
+
+    @Test
     fun `unexpected close bracket throws`() {
         val ex = assertFailsWith<IllegalStateException> {
             Parser.parse("]")
