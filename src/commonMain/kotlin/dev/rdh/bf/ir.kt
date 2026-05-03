@@ -36,7 +36,21 @@ sealed interface Expr {
     operator fun unaryMinus(): Expr = Neg(this)
 }
 
-data class Const(val value: Int) : Expr
+data class Const(val value: Int) : Expr {
+    override fun plus(other: Expr): Expr = when (other) {
+        is Const -> Const(value + other.value)
+        else -> super.plus(other)
+    }
+    override fun times(other: Expr): Expr = when (other) {
+        is Const -> Const(value * other.value)
+        else -> super.times(other)
+    }
+    override fun div(other: Int): Expr = when (other) {
+        1 -> this
+        else -> super.div(other)
+    }
+    override fun unaryMinus(): Expr = Const(-value)
+}
 
 data class Cell(val offset: Int) : Expr
 
