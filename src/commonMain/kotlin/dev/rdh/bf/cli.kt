@@ -121,20 +121,20 @@ abstract class CommandLine {
     }
 
     protected fun exec(literal: String) {
-//        val (program, ptime) = measureTimedValue { Parser.parse(literal) }
-//
-//        val runner = if (compiled) systemRunner!! else Interpreter
-//
-//        val (executable, cTime) = measureTimedValue { runner.compile(program, tapeSize) }
-//
-//        val time = measureTime { executable.run(stdin, stdout) }
-//        stdout.flush()
-//
-//        if (printTime) {
-//            stderr.write("\nparse / compile / execute:\n")
-//            stderr.write("${formatTime(ptime)} / ${formatTime(cTime)} / ${formatTime(time)}\n")
-//            stderr.flush()
-//        }
+        val (program, ptime) = measureTimedValue { TODO() }
+
+        val runner = if (compiled) systemRunner!! else Interpreter
+
+        val (executable, cTime) = measureTimedValue { runner.compile(program, tapeSize) }
+
+        val time = measureTime { executable.run(stdin, stdout) }
+        stdout.flush()
+
+        if (printTime) {
+            stderr.write("\nparse / compile / execute:\n")
+            stderr.write("${formatTime(ptime)} / ${formatTime(cTime)} / ${formatTime(time)}\n")
+            stderr.flush()
+        }
     }
 
     private fun formatTime(time: kotlin.time.Duration): String {

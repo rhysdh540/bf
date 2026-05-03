@@ -1,6 +1,9 @@
 package dev.rdh.bf
 
-data class Temp(val value: Int)
+import kotlin.jvm.JvmInline
+
+@JvmInline
+value class Temp(val id: Int)
 
 /**
  * backend-neutral executable IR for bf programs
@@ -43,9 +46,17 @@ data class Neg(val value: Expr) : Expr
 /**
  * **EXACT** division in the widened domain before the eventual byte truncation
  */
-data class Div(val numerator: Expr, val divisor: Int) : Expr
+data class ExactDiv(val numerator: Expr, val divisor: Int) : Expr {
+    init {
+        require(divisor != 0) { "division by zero" }
+    }
+}
 
 /**
  * integer-valued binomial term C(value, degree)
  */
-data class Choose(val value: Expr, val degree: Int) : Expr
+data class Choose(val value: Expr, val degree: Int) : Expr {
+    init {
+        require(degree >= 0) { "negative choose degree: $degree" }
+    }
+}

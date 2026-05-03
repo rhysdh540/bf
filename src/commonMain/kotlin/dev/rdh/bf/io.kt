@@ -20,12 +20,18 @@ class ByteInput(private val data: IntArray) : BfInput {
 
 class ByteOutput : BfOutput {
     private val buf = mutableListOf<Int>()
+    var flushes: Int = 0
+        private set
 
     val bytes: List<Int>
         get() = buf
 
     override fun writeByte(value: Int) {
         buf.add(value)
+    }
+
+    override fun flush() {
+        flushes++
     }
 }
 
