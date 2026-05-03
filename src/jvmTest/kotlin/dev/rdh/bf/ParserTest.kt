@@ -134,6 +134,23 @@ class ParserTest {
         assertTrue(ops.isEmpty())
     }
 
+    @Test
+    fun `leading loop is eliminated when initial guard is known zero`() {
+        val ops = Parser.parse("[-]")
+        assertTrue(ops.isEmpty())
+    }
+
+    @Test
+    fun `leading dead loop does not block later constant folding`() {
+        val ops = Parser.parse("[-]+++.")
+        assertEquals(1, ops.size)
+        val ioBlock = assertIs<IOBlock>(ops.single())
+        assertEquals(1, ioBlock.ops.size)
+        val output = assertIs<Output>(ioBlock.ops.single())
+        assertEquals(Expression.const(3), output.expr)
+        assertEquals(0, ioBlock.pointerDelta)
+    }
+
     private fun writeBlockOf(vararg writes: Write) = WriteBlock(
         pointerDelta = 0,
         writes = writes.toList(),
