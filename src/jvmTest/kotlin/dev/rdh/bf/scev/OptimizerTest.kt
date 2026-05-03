@@ -136,6 +136,36 @@ class OptimizerTest {
     }
 
     @Test
+    fun `entry facts unlock the triangular inner loop`() {
+        val summary = Optimizer.analyzeLoop(
+            listOf<Op>(
+                Store(3, Add(Cell(3), Cell(1), Cell(0))),
+                Store(0, Add(Cell(2), Cell(0), Const(-1))),
+                Store(1, Const(0)),
+                Store(2, Const(0)),
+            )
+        ) { offset ->
+            when (offset) {
+                1, 2 -> Const.ZERO
+                else -> Cell(offset)
+            }
+        }
+
+        assertEquals(
+            Optimizer.LoopSummary(
+                guardOffset = 0,
+                tripCount = Cell(0),
+                pointerDelta = 0,
+                writes = listOf(
+                    Optimizer.LoopWrite(3, Add(Cell(3), Mul(Cell(0), Cell(0)), Mul(Const(-1), Choose(Cell(0), 2)))),
+                    Optimizer.LoopWrite(0, Const(0)),
+                ),
+            ),
+            summary
+        )
+    }
+
+    @Test
     fun `non unit odd guard delta uses modular inverse trip count`() {
         val summary = Optimizer.analyzeLoop(
             listOf(Store(0, Add(Cell(0), Const(3))))

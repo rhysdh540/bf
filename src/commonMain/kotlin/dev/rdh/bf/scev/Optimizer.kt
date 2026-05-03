@@ -13,8 +13,13 @@ object Optimizer {
 
     data class LoopWrite(val offset: Int, val value: Expr)
 
-    fun analyzeLoop(body: List<Op>): LoopSummary? {
-        val candidate = extractCandidate(body) ?: return null
+    fun analyzeLoop(body: List<Op>): LoopSummary? = analyzeLoop(body) { Cell(it) }
+
+    fun analyzeLoop(body: List<Op>, readCell: (Int) -> Expr): LoopSummary? {
+        val entryBase: (Int) -> Expr = { offset ->
+            if (offset == 0) Cell(0) else readCell(offset)
+        }
+        val candidate = extractCandidate(body, entryBase) ?: return null
         if (candidate.pointerDelta != 0) return null
 
         val inductionExpr = candidate.writes[candidate.guardOffset] ?: return null
@@ -25,12 +30,13 @@ object Optimizer {
         val tripCount = Const(inv) * Cell(candidate.guardOffset)
         val deltas = candidate.writes
             .filterKeys { it != candidate.guardOffset }
-            .mapValues { (offset, expr) -> subtractBase(expr, offset) }
+            .mapValues { (offset, expr) -> subtractBase(expr, entryBase(offset)) }
 
         solveRecurrences(
             guardOffset = candidate.guardOffset,
             inductionDelta = inductionDelta,
             deltas = deltas,
+            entryBase = entryBase,
             tripCount = tripCount,
         )?.let { writes ->
             return LoopSummary(
@@ -46,6 +52,7 @@ object Optimizer {
             guardOffset = candidate.guardOffset,
             inductionDelta = inductionDelta,
             deltas = substituted,
+            entryBase = entryBase,
             tripCount = tripCount,
         ) ?: return null
 
@@ -98,9 +105,9 @@ object Optimizer {
             else -> Recurrence(coeffs.map { coeff -> coeff * factor }).trimmed()
         }
 
-        fun integrate(offset: Int): Recurrence {
+        fun integrate(start: Expr): Recurrence {
             val integrated = MutableList(coeffs.size + 1) { Const.ZERO as Expr }
-            integrated[0] = Cell(offset)
+            integrated[0] = start
             for ((degree, coeff) in coeffs.withIndex()) {
                 integrated[degree + 1] = integrated[degree + 1] + coeff
             }
@@ -174,6 +181,7 @@ object Optimizer {
         guardOffset: Int,
         inductionDelta: Int,
         deltas: Map<Int, Expr>,
+        entryBase: (Int) -> Expr,
         tripCount: Expr,
     ): List<LoopWrite>? {
         val modifiedOffsets = deltas.keys + guardOffset
@@ -182,7 +190,7 @@ object Optimizer {
 
         for ((offset, delta) in deltas) {
             if (delta == Const.ZERO) {
-                solved[offset] = Recurrence.constant(Cell(offset))
+                solved[offset] = Recurrence.constant(entryBase(offset))
             }
         }
 
@@ -198,9 +206,9 @@ object Optimizer {
                 val delta = deltas.getValue(offset)
                 val deltaRecurrence = toRecurrence(delta, solved, modifiedOffsets) ?: continue
                 solved[offset] = if (deltaRecurrence.isConstant) {
-                    Recurrence.affine(Cell(offset), deltaRecurrence.constantTerm)
+                    Recurrence.affine(entryBase(offset), deltaRecurrence.constantTerm)
                 } else {
-                    deltaRecurrence.integrate(offset)
+                    deltaRecurrence.integrate(entryBase(offset))
                 }
                 unresolved.remove(offset)
                 changed = true
@@ -212,48 +220,55 @@ object Optimizer {
         val writes = mutableListOf(LoopWrite(guardOffset, Const.ZERO))
         for (offset in deltas.keys) {
             val exit = solved.getValue(offset).at(tripCount)
-            if (exit != Cell(offset)) {
+            if (exit != entryBase(offset)) {
                 writes += LoopWrite(offset, exit)
             }
         }
         return orderWrites(writes, LoopWrite::offset, LoopWrite::value)
     }
 
-    private fun extractCandidate(body: List<Op>): Candidate? {
-        var ptrOffset = 0
-        val state = mutableMapOf<Int, Expr>()
-        val temps = mutableMapOf<Temp, Expr>()
+    private fun extractCandidate(body: List<Op>, entryCell: (Int) -> Expr): Candidate? {
+        val state = SymbolicState(entryCell)
 
-        fun readCell(absOffset: Int): Expr = state[absOffset] ?: Cell(absOffset)
-        fun readTemp(temp: Temp): Expr? = temps[temp]
+        fun applySummary(basePtr: Int, summary: LoopSummary, guard: Expr): Boolean {
+            if (summary.prologue.isNotEmpty()) {
+                val guardConst = guard as? Const ?: return false
+                if (guardConst.value == 0) return true
+                if (!state.applyWrites(basePtr, summary.prologue.map { it.offset to it.value })) return false
+            }
+            if (!state.applyWrites(basePtr, summary.writes.map { it.offset to it.value })) return false
+            state.move(summary.pointerDelta)
+            return true
+        }
 
         fun execute(ops: List<Op>): Boolean {
             for (op in ops) {
                 when (op) {
-                    is MovePtr -> ptrOffset += op.delta
-                    is SetTemp -> {
-                        temps[op.temp] = substitute(op.value, ptrOffset, ::readCell, ::readTemp) ?: return false
-                    }
-
-                    is Store -> {
-                        val absOffset = ptrOffset + op.offset
-                        state[absOffset] = substitute(op.value, ptrOffset, ::readCell, ::readTemp) ?: return false
-                    }
+                    is MovePtr, is SetTemp, is Store -> if (!state.apply(op)) return false
 
                     is Conditional -> {
-                        val guard = readCell(ptrOffset + op.offset)
+                        val guard = state.readCell(state.ptrOffset + op.offset)
                         when (guard) {
-                            Const(0) -> {}
+                            Const.ZERO -> {}
                             is Const -> if (!execute(op.body)) return false
                             else -> return false
                         }
                     }
 
                     is Loop -> {
-                        val guard = readCell(ptrOffset + op.offset)
-                        when (guard) {
-                            Const(0) -> {}
-                            else -> return false
+                        val basePtr = state.ptrOffset
+                        when (val guard = state.readCell(basePtr + op.offset)) {
+                            Const.ZERO -> {}
+                            else -> {
+                                val summary = analyzeLoop(op.body) { offset ->
+                                    if (offset == 0) {
+                                        Cell(0)
+                                    } else {
+                                        shiftExpr(state.readCell(basePtr + offset), -basePtr)
+                                    }
+                                } ?: return false
+                                if (!applySummary(basePtr, summary, guard)) return false
+                            }
                         }
                     }
 
@@ -265,10 +280,10 @@ object Optimizer {
 
         if (!execute(body)) return null
 
-        val writes = state.filter { (offset, expr) -> expr != Cell(offset) }
+        val writes = state.writes()
         return Candidate(
             guardOffset = 0,
-            pointerDelta = ptrOffset,
+            pointerDelta = state.ptrOffset,
             writes = writes,
         )
     }
@@ -282,24 +297,6 @@ object Optimizer {
         is Neg -> -substituteOffsets(expr.value, mapping)
         is ExactDiv -> substituteOffsets(expr.numerator, mapping) / expr.divisor
         is Choose -> choose(substituteOffsets(expr.value, mapping), expr.degree)
-    }
-
-    private fun subtractBase(expr: Expr, offset: Int): Expr = when (expr) {
-        is Cell -> if (expr.offset == offset) Const.ZERO else expr + -Cell(offset)
-        is Add -> {
-            var removed = false
-            val remaining = mutableListOf<Expr>()
-            for (term in expr.terms) {
-                if (!removed && term == Cell(offset)) {
-                    removed = true
-                } else {
-                    remaining += term
-                }
-            }
-            if (removed) remaining.fold(Const.ZERO as Expr) { acc, term -> acc + term } else expr + -Cell(offset)
-        }
-
-        else -> expr + -Cell(offset)
     }
 
     private fun toRecurrence(

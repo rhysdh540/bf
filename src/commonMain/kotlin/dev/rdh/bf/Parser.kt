@@ -23,7 +23,7 @@ object Parser {
                         nextTemp = nextTemp,
                     ) ?: error("Unexpected ]")
                     val parent = stack.lastOrNull() ?: error("Unexpected ]")
-                    parent += lowerLoopSummary(body, Optimizer.analyzeLoop(body), nextTemp)
+                    parent += Loop(0, body)
                 }
             }
         }
@@ -62,75 +62,132 @@ object Parser {
     ): List<Op> {
         if (ops.isEmpty()) return emptyList()
 
-        var ptrOffset = 0
-        val state = mutableMapOf<Int, Expr>()
-        val temps = mutableMapOf<Temp, Expr>()
-        val ioOps = mutableListOf<Op>()
+        val state = SymbolicState(cellDefault)
+        val lowered = mutableListOf<Op>()
 
-        fun readCell(absOffset: Int): Expr = state[absOffset] ?: cellDefault(absOffset)
-        fun readTemp(temp: Temp): Expr? = temps[temp]
+        fun materializePending() {
+            val writes = orderWrites(
+                state.writes()
+                    .map { (offset, expr) -> Store(offset, expr) },
+                Store::offset,
+                Store::value,
+            )
+            lowered += lowerStores(writes, nextTemp)
+            if (state.ptrOffset != 0) {
+                lowered += MovePtr(state.ptrOffset)
+            }
+            state.materializeBoundary()
+        }
 
-        fun execute(sequence: List<Op>): Boolean {
-            for (op in sequence) {
-                when (op) {
-                    is MovePtr -> ptrOffset += op.delta
-                    is SetTemp -> {
-                        temps[op.temp] = substitute(op.value, ptrOffset, ::readCell, ::readTemp) ?: return false
-                    }
+        fun stopWithRaw(from: Int): List<Op> {
+            materializePending()
+            lowered += ops.drop(from)
+            return lowered
+        }
 
-                    is Store -> {
-                        val absOffset = ptrOffset + op.offset
-                        state[absOffset] = substitute(op.value, ptrOffset, ::readCell, ::readTemp) ?: return false
-                    }
+        fun applySummary(basePtr: Int, summary: Optimizer.LoopSummary, guard: Expr): Boolean {
+            if (summary.prologue.isNotEmpty()) {
+                val guardConst = guard as? Const ?: return false
+                if (guardConst.value == 0) return true
+                if (!state.applyWrites(basePtr, summary.prologue.map { it.offset to it.value })) return false
+            }
 
-                    is Read -> {
-                        val absOffset = ptrOffset + op.offset
-                        ioOps += Read(absOffset)
-                        state[absOffset] = Cell(absOffset)
-                    }
+            if (!state.applyWrites(basePtr, summary.writes.map { it.offset to it.value })) return false
+            state.move(summary.pointerDelta)
+            return true
+        }
 
-                    is Write -> {
-                        ioOps += Write(substitute(op.value, ptrOffset, ::readCell, ::readTemp) ?: return false)
-                    }
+        for ((index, op) in ops.withIndex()) {
+            when (op) {
+                is MovePtr, is SetTemp, is Store -> if (!state.apply(op)) {
+                    return stopWithRaw(index)
+                }
 
-                    is Conditional -> {
-                        val guard = readCell(ptrOffset + op.offset)
-                        when (guard) {
-                            Const(0) -> {}
-                            is Const -> if (!execute(op.body)) return false
-                            else -> return false
+                is Read -> {
+                    val absOffset = state.ptrOffset + op.offset
+                    lowered += Read(absOffset)
+                    state.setCell(absOffset, Cell(absOffset))
+                }
+
+                is Write -> {
+                    val value = state.eval(op.value) ?: return stopWithRaw(index)
+                    lowered += Write(value)
+                }
+
+                is Conditional -> {
+                    val basePtr = state.ptrOffset
+                    val guard = state.readCell(basePtr + op.offset)
+                    when (guard) {
+                        Const(0) -> {}
+                        is Const -> {
+                            if (op.body.any { it !is MovePtr && it !is SetTemp && it !is Store }) {
+                                return stopWithRaw(index)
+                            }
+                            for (inner in op.body) {
+                                if (!state.apply(inner)) return stopWithRaw(index)
+                            }
+                        }
+
+                        else -> {
+                            val effect = controlEffect(op.body)
+                            materializePending()
+                            lowered += op
+                            if (effect.pointerDelta != 0) {
+                                lowered += ops.drop(index + 1)
+                                return lowered
+                            }
+                            state.forgetCells(effect.modifiedOffsets)
                         }
                     }
+                }
 
-                    is Loop -> {
-                        val guard = readCell(ptrOffset + op.offset)
-                        when (guard) {
-                            Const(0) -> {}
-                            else -> return false
+                is Loop -> {
+                    val basePtr = state.ptrOffset
+                    val guard = state.readCell(basePtr + op.offset)
+                    when (guard) {
+                        Const(0) -> {}
+                        else -> {
+                            val summary = Optimizer.analyzeLoop(op.body) { offset ->
+                                shiftExpr(state.readCell(basePtr + offset), -basePtr)
+                            }
+
+                            when {
+                                summary != null && summary.prologue.isEmpty() -> {
+                                    if (!applySummary(basePtr, summary, guard)) return stopWithRaw(index)
+                                }
+
+                                summary != null && guard is Const && guard.value != 0 -> {
+                                    if (!applySummary(basePtr, summary, guard)) return stopWithRaw(index)
+                                }
+
+                                summary != null -> {
+                                    materializePending()
+                                    lowered += lowerLoopSummary(op.body, summary, nextTemp)
+                                    state.forgetCells((summary.prologue + summary.writes).map { it.offset }.toSet())
+                                }
+
+                                else -> {
+                                    val effect = controlEffect(op.body)
+                                    materializePending()
+                                    lowered += op
+                                    if (effect.pointerDelta != 0) {
+                                        lowered += ops.drop(index + 1)
+                                        return lowered
+                                    }
+                                    state.forgetCells(effect.modifiedOffsets)
+                                }
+                            }
                         }
                     }
                 }
             }
-
-            return true
         }
 
-        if (!execute(ops)) return ops
-        if (eliminateDeadWrites) return ioOps
-
-        val writes = orderWrites(
-            state.entries
-                .filter { (offset, expr) -> expr != cellDefault(offset) }
-                .map { (offset, expr) -> Store(offset, expr) },
-            Store::offset,
-            Store::value,
-        )
-
-        return buildList {
-            addAll(ioOps)
-            addAll(lowerStores(writes, nextTemp))
-            if (ptrOffset != 0) add(MovePtr(ptrOffset))
+        if (!eliminateDeadWrites) {
+            materializePending()
         }
+
+        return lowered
     }
 
     private fun lowerStores(stores: List<Store>, nextTemp: () -> Temp): List<Op> {
@@ -171,6 +228,42 @@ object Parser {
         is Neg -> -substituteCells(expr.value, snapshots)
         is ExactDiv -> substituteCells(expr.numerator, snapshots) / expr.divisor
         is Choose -> choose(substituteCells(expr.value, snapshots), expr.degree)
+    }
+
+    private data class ControlEffect(
+        val modifiedOffsets: Set<Int>,
+        val pointerDelta: Int?,
+    )
+
+    private fun controlEffect(ops: List<Op>): ControlEffect {
+        var ptrOffset = 0
+        val modified = mutableSetOf<Int>()
+
+        for (op in ops) {
+            when (op) {
+                is MovePtr -> ptrOffset += op.delta
+                is SetTemp, is Write -> {}
+                is Store -> modified += ptrOffset + op.offset
+                is Read -> modified += ptrOffset + op.offset
+                is Conditional -> {
+                    val nested = controlEffect(op.body)
+                    modified += nested.modifiedOffsets.map { ptrOffset + it }
+                    if (nested.pointerDelta != 0) {
+                        return ControlEffect(modified, null)
+                    }
+                }
+
+                is Loop -> {
+                    val nested = controlEffect(op.body)
+                    modified += nested.modifiedOffsets.map { ptrOffset + it }
+                    if (nested.pointerDelta != 0) {
+                        return ControlEffect(modified, null)
+                    }
+                }
+            }
+        }
+
+        return ControlEffect(modified, ptrOffset)
     }
 
     private class RegionBuilder {

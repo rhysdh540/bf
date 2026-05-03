@@ -11,6 +11,54 @@ internal fun choose(value: Expr, degree: Int): Expr {
     }
 }
 
+internal fun Expr.constantValue(): Long? = when (this) {
+    is Const -> value.toLong()
+    is Cell, is GetTemp -> null
+    is Add -> {
+        var sum = 0L
+        for (term in terms) {
+            sum += term.constantValue() ?: return null
+        }
+        sum
+    }
+
+    is Mul -> {
+        var product = 1L
+        for (factor in factors) {
+            product *= factor.constantValue() ?: return null
+        }
+        product
+    }
+
+    is Neg -> -(value.constantValue() ?: return null)
+    is ExactDiv -> exactDivide(numerator.constantValue() ?: return null, divisor.toLong())
+    is Choose -> chooseConst(value.constantValue() ?: return null, degree)
+}
+
+internal fun truncateByte(value: Long): Int {
+    val mod = value % 256L
+    return if (mod >= 0) mod.toInt() else (mod + 256L).toInt()
+}
+
+internal fun Expr.truncateKnownByte(): Expr {
+    val constant = constantValue() ?: return this
+    return Const(truncateByte(constant))
+}
+
+internal fun shiftExpr(expr: Expr, delta: Int): Expr = when {
+    delta == 0 -> expr
+    else -> when (expr) {
+        is Const -> expr
+        is Cell -> Cell(expr.offset + delta)
+        is GetTemp -> expr
+        is Add -> expr.terms.fold(Const.ZERO as Expr) { acc, term -> acc + shiftExpr(term, delta) }
+        is Mul -> expr.factors.fold(Const.ONE as Expr) { acc, factor -> acc * shiftExpr(factor, delta) }
+        is Neg -> -shiftExpr(expr.value, delta)
+        is ExactDiv -> shiftExpr(expr.numerator, delta) / expr.divisor
+        is Choose -> choose(shiftExpr(expr.value, delta), expr.degree)
+    }
+}
+
 internal fun Expr.readOffsets(): List<Int> = when (this) {
     is Const -> emptyList()
     is Cell -> listOf(offset)
@@ -101,14 +149,41 @@ internal fun <T> orderWrites(
 }
 
 internal fun Expr.additiveDelta(offset: Int): Int? = when (this) {
+    is Cell -> if (this.offset == offset) 0 else null
     is Add -> {
-        if (terms.size != 2) return null
-        val cell = terms.firstOrNull { it == Cell(offset) }
-        val constant = terms.firstOrNull { it is Const } as? Const
-        if (cell == null || constant == null) null else constant.value
+        var baseCount = 0
+        var constant = 0
+        for (term in terms) {
+            when (term) {
+                Cell(offset) -> baseCount++
+                is Const -> constant += term.value
+                else -> return null
+            }
+        }
+        if (baseCount == 1) constant else null
     }
 
     else -> null
+}
+
+internal fun subtractBase(expr: Expr, base: Expr): Expr = when {
+    expr == base -> Const.ZERO
+    base == Const.ZERO -> expr
+    base is Cell && expr is Cell -> if (expr.offset == base.offset) Const.ZERO else expr + -base
+    base is Cell && expr is Add -> {
+        var removed = false
+        var result: Expr = Const.ZERO
+        for (term in expr.terms) {
+            if (!removed && term == base) {
+                removed = true
+                continue
+            }
+            result += term
+        }
+        if (removed) result else expr + -base
+    }
+
+    else -> expr + -base
 }
 
 private fun chooseConst(value: Long, degree: Int): Long {

@@ -86,7 +86,7 @@ data class Const(val value: Int) : Expr {
     override fun div(other: Int): Expr {
         if (other == 1) return this
         if (value % other == 0) return Const(value / other)
-        error("inexact division: $value / $other")
+        return ExactDiv(this, other)
     }
     companion object {
         val ZERO = Const(0)
