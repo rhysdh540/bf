@@ -55,30 +55,7 @@ object Interpreter : BfRunner {
         is Add -> expr.terms.sumOf { eval(it) }
         is Mul -> expr.factors.fold(1L) { acc, factor -> acc * eval(factor) }
         is Neg -> -eval(expr.value)
-        is ExactDiv -> {
-            exactDivide(eval(expr.numerator), expr.divisor.toLong())
-        }
-        is Choose -> choose(eval(expr.value), expr.degree)
-    }
-
-    private fun choose(value: Long, degree: Int): Long {
-        if (degree == 0) return 1
-
-        var result = 1L
-        for (i in 0 until degree) {
-            result = exactDivide(result * (value - i), i + 1L)
-        }
-        return result
-    }
-
-    private fun exactDivide(numerator: Long, divisor: Long): Long {
-        require(divisor != 0L) { "division by zero" }
-        require(numerator % divisor == 0L) { "inexact division: $numerator / $divisor" }
-        return numerator / divisor
-    }
-
-    private fun truncateByte(value: Long): Int {
-        val mod = value % 256L
-        return if (mod >= 0) mod.toInt() else (mod + 256L).toInt()
+        is ExactDiv -> exactDivide(eval(expr.numerator), expr.divisor.toLong())
+        is Choose -> chooseConst(eval(expr.value), expr.degree)
     }
 }

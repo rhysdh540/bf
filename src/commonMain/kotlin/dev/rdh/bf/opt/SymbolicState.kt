@@ -1,4 +1,6 @@
-package dev.rdh.bf
+package dev.rdh.bf.opt
+
+import dev.rdh.bf.*
 
 internal class SymbolicState(private var cellDefault: (Int) -> Expr) {
     private val state = mutableMapOf<Int, Expr>()
@@ -13,6 +15,8 @@ internal class SymbolicState(private var cellDefault: (Int) -> Expr) {
 
     fun eval(expr: Expr, ptrOffset: Int = this.ptrOffset): Expr? =
         substitute(expr, ptrOffset, ::readCell, ::readTemp)
+
+    fun readRelative(basePtr: Int, offset: Int): Expr = shiftExpr(readCell(basePtr + offset), -basePtr)
 
     fun move(delta: Int) {
         ptrOffset += delta

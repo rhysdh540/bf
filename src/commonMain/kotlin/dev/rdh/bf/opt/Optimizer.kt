@@ -1,4 +1,4 @@
-package dev.rdh.bf.scev
+package dev.rdh.bf.opt
 
 import dev.rdh.bf.*
 
@@ -230,17 +230,6 @@ object Optimizer {
     private fun extractCandidate(body: List<Op>, entryCell: (Int) -> Expr): Candidate? {
         val state = SymbolicState(entryCell)
 
-        fun applySummary(basePtr: Int, summary: LoopSummary, guard: Expr): Boolean {
-            if (summary.prologue.isNotEmpty()) {
-                val guardConst = guard as? Const ?: return false
-                if (guardConst.value == 0) return true
-                if (!state.applyWrites(basePtr, summary.prologue.map { it.offset to it.value })) return false
-            }
-            if (!state.applyWrites(basePtr, summary.writes.map { it.offset to it.value })) return false
-            state.move(summary.pointerDelta)
-            return true
-        }
-
         fun execute(ops: List<Op>): Boolean {
             for (op in ops) {
                 when (op) {
@@ -260,14 +249,8 @@ object Optimizer {
                         when (val guard = state.readCell(basePtr + op.offset)) {
                             Const.ZERO -> {}
                             else -> {
-                                val summary = analyzeLoop(op.body) { offset ->
-                                    if (offset == 0) {
-                                        Cell(0)
-                                    } else {
-                                        shiftExpr(state.readCell(basePtr + offset), -basePtr)
-                                    }
-                                } ?: return false
-                                if (!applySummary(basePtr, summary, guard)) return false
+                                val summary = analyzeLoop(op.body) { offset -> state.readRelative(basePtr, offset) } ?: return false
+                                if (!applyLoopSummary(state, basePtr, summary, guard)) return false
                             }
                         }
                     }

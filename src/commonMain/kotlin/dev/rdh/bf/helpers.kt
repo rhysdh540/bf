@@ -186,7 +186,7 @@ internal fun subtractBase(expr: Expr, base: Expr): Expr = when {
     else -> expr + -base
 }
 
-private fun chooseConst(value: Long, degree: Int): Long {
+internal fun chooseConst(value: Long, degree: Int): Long {
     var result = 1L
     for (i in 0 until degree) {
         result = exactDivide(result * (value - i), i + 1L)
@@ -194,7 +194,7 @@ private fun chooseConst(value: Long, degree: Int): Long {
     return result
 }
 
-private fun exactDivide(numerator: Long, divisor: Long): Long {
+internal fun exactDivide(numerator: Long, divisor: Long): Long {
     require(divisor != 0L) { "division by zero" }
     require(numerator % divisor == 0L) { "inexact division: $numerator / $divisor" }
     return numerator / divisor

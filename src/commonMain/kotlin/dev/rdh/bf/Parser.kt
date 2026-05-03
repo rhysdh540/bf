@@ -1,6 +1,9 @@
 package dev.rdh.bf
 
-import dev.rdh.bf.scev.Optimizer
+import dev.rdh.bf.opt.Optimizer
+import dev.rdh.bf.opt.SymbolicState
+import dev.rdh.bf.opt.applyLoopSummary
+import dev.rdh.bf.opt.controlEffect
 
 object Parser {
     fun parse(program: CharSequence): List<Op> {
@@ -85,18 +88,6 @@ object Parser {
             return lowered
         }
 
-        fun applySummary(basePtr: Int, summary: Optimizer.LoopSummary, guard: Expr): Boolean {
-            if (summary.prologue.isNotEmpty()) {
-                val guardConst = guard as? Const ?: return false
-                if (guardConst.value == 0) return true
-                if (!state.applyWrites(basePtr, summary.prologue.map { it.offset to it.value })) return false
-            }
-
-            if (!state.applyWrites(basePtr, summary.writes.map { it.offset to it.value })) return false
-            state.move(summary.pointerDelta)
-            return true
-        }
-
         for ((index, op) in ops.withIndex()) {
             when (op) {
                 is MovePtr, is SetTemp, is Store -> if (!state.apply(op)) {
@@ -147,17 +138,15 @@ object Parser {
                     when (guard) {
                         Const(0) -> {}
                         else -> {
-                            val summary = Optimizer.analyzeLoop(op.body) { offset ->
-                                shiftExpr(state.readCell(basePtr + offset), -basePtr)
-                            }
+                            val summary = Optimizer.analyzeLoop(op.body) { offset -> state.readRelative(basePtr, offset) }
 
                             when {
                                 summary != null && summary.prologue.isEmpty() -> {
-                                    if (!applySummary(basePtr, summary, guard)) return stopWithRaw(index)
+                                    if (!applyLoopSummary(state, basePtr, summary, guard)) return stopWithRaw(index)
                                 }
 
                                 summary != null && guard is Const && guard.value != 0 -> {
-                                    if (!applySummary(basePtr, summary, guard)) return stopWithRaw(index)
+                                    if (!applyLoopSummary(state, basePtr, summary, guard)) return stopWithRaw(index)
                                 }
 
                                 summary != null -> {
@@ -228,42 +217,6 @@ object Parser {
         is Neg -> -substituteCells(expr.value, snapshots)
         is ExactDiv -> substituteCells(expr.numerator, snapshots) / expr.divisor
         is Choose -> choose(substituteCells(expr.value, snapshots), expr.degree)
-    }
-
-    private data class ControlEffect(
-        val modifiedOffsets: Set<Int>,
-        val pointerDelta: Int?,
-    )
-
-    private fun controlEffect(ops: List<Op>): ControlEffect {
-        var ptrOffset = 0
-        val modified = mutableSetOf<Int>()
-
-        for (op in ops) {
-            when (op) {
-                is MovePtr -> ptrOffset += op.delta
-                is SetTemp, is Write -> {}
-                is Store -> modified += ptrOffset + op.offset
-                is Read -> modified += ptrOffset + op.offset
-                is Conditional -> {
-                    val nested = controlEffect(op.body)
-                    modified += nested.modifiedOffsets.map { ptrOffset + it }
-                    if (nested.pointerDelta != 0) {
-                        return ControlEffect(modified, null)
-                    }
-                }
-
-                is Loop -> {
-                    val nested = controlEffect(op.body)
-                    modified += nested.modifiedOffsets.map { ptrOffset + it }
-                    if (nested.pointerDelta != 0) {
-                        return ControlEffect(modified, null)
-                    }
-                }
-            }
-        }
-
-        return ControlEffect(modified, ptrOffset)
     }
 
     private class RegionBuilder {
