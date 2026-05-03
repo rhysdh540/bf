@@ -5,9 +5,9 @@ fun interface BfExecutable {
 }
 
 fun interface BfRunner {
-    fun compile(program: Iterable<*>, tapeSize: Int): BfExecutable
+    fun compile(program: Iterable<Op>, tapeSize: Int): BfExecutable
 
-    fun run(program: Iterable<*>, tapeSize: Int, input: BfInput, output: BfOutput) {
+    fun run(program: Iterable<Op>, tapeSize: Int, input: BfInput, output: BfOutput) {
         compile(program, tapeSize).run(input, output)
     }
 }

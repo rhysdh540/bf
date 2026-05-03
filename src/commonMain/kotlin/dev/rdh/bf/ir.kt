@@ -1,0 +1,51 @@
+package dev.rdh.bf
+
+data class Temp(val value: Int)
+
+/**
+ * backend-neutral executable IR for bf programs
+ *
+ * - arithmetic in [Expr] happens in widened integer space
+ * - [Store] and [Write] truncate back to the tape cell width
+ * - snapshot semantics from the frontend are made explicit
+ *   by lowering old cell reads into [SetTemp] before any dependent stores
+ */
+sealed interface Op
+
+data class MovePtr(val delta: Int) : Op
+
+data class SetTemp(val temp: Temp, val value: Expr) : Op
+
+data class Store(val offset: Int, val value: Expr) : Op
+
+data class Read(val offset: Int) : Op
+
+data class Write(val value: Expr) : Op
+
+data class Conditional(val offset: Int, val body: List<Op>) : Op // if non-zero
+
+data class Loop(val offset: Int, val body: List<Op>) : Op // while non-zero
+
+sealed interface Expr
+
+data class Const(val value: Int) : Expr
+
+data class Cell(val offset: Int) : Expr
+
+data class GetTemp(val temp: Temp) : Expr
+
+data class Add(val terms: List<Expr>) : Expr
+
+data class Mul(val factors: List<Expr>) : Expr
+
+data class Neg(val value: Expr) : Expr
+
+/**
+ * **EXACT** division in the widened domain before the eventual byte truncation
+ */
+data class Div(val numerator: Expr, val divisor: Int) : Expr
+
+/**
+ * integer-valued binomial term C(value, degree)
+ */
+data class Choose(val value: Expr, val degree: Int) : Expr
