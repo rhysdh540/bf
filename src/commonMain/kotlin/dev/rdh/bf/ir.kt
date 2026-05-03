@@ -50,6 +50,11 @@ data class Const(val value: Int) : Expr {
         else -> super.div(other)
     }
     override fun unaryMinus(): Expr = Const(-value)
+
+    companion object {
+        val ZERO = Const(0)
+        val ONE = Const(1)
+    }
 }
 
 data class Cell(val offset: Int) : Expr

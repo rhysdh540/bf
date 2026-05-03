@@ -6,33 +6,61 @@ import kotlin.test.assertFailsWith
 
 class ParserTest {
     @Test
-    fun `adjacent pointer moves are merged`() {
-        val ops = Parser.parse(">><<>")
-        assertEquals(listOf(MovePtr(1)), ops)
+    fun `straight-line motion and arithmetic are folded into constant output`() {
+        val ops = Parser.parse(">><<>+.")
+        assertEquals(listOf(Write(Const(1))), ops)
     }
 
     @Test
-    fun `net zero pointer motion is dropped`() {
-        val ops = Parser.parse(">><<><")
-        assertEquals(emptyList(), ops)
+    fun `empty and dead leading loops are eliminated`() {
+        assertEquals(emptyList(), Parser.parse("[]"))
+        assertEquals(emptyList(), Parser.parse("[-]"))
     }
 
     @Test
-    fun `adjacent increments on the same cell are merged`() {
-        val ops = Parser.parse("++-")
-        assertEquals(listOf(Store(0, Cell(0) + Const(1))), ops)
+    fun `clear loops fold away once their end-state is dead`() {
+        val ops = Parser.parse(">[-]<+.")
+        assertEquals(listOf(Write(Const(1))), ops)
     }
 
     @Test
-    fun `empty loops are dropped at parse time`() {
-        val ops = Parser.parse("[]")
-        assertEquals(emptyList(), ops)
+    fun `simple transfer loops fold through to observable output`() {
+        val ops = Parser.parse("+++[->+<]>.")
+        assertEquals(listOf(Write(Const(3))), ops)
     }
 
     @Test
-    fun `closed loops are appended through the parent merge path`() {
-        val ops = Parser.parse(">[]>")
-        assertEquals(listOf(MovePtr(2)), ops)
+    fun `unsupported loops are preserved when their guard may be live`() {
+        val ops = Parser.parse("+[++]>+.")
+        assertEquals(
+            listOf(
+                Store(0, Cell(0) + Const(1)),
+                Loop(0, listOf(Store(0, Cell(0) + Const(2)))),
+                MovePtr(1),
+                Store(0, Cell(0) + Const(1)),
+                Write(Cell(0)),
+            ),
+            ops
+        )
+    }
+
+    @Test
+    fun `nested loops reduce to single constant output`() {
+        val program = ">>+++++++>>>>>>->->--------[-<[-]-[-<[-]-[-<<<<<<<<[-]-[->[-]>>[-]>>[-]<<<[-<+>>+<]>[-<+>]<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<<<<<]>>>>>>>>]>]>]<<<<<<."
+        val ops = Parser.parse(program)
+
+        assertEquals(listOf(Write(Const(56))), ops)
+    }
+
+    @Test
+    fun `conditional is inlined when guard is known nonzero`() {
+        assertEquals(emptyList(), Parser.parse("+[-]"))
+    }
+
+    @Test
+    fun `leading dead loop does not block later constant folding`() {
+        val ops = Parser.parse("[-]+++.")
+        assertEquals(listOf(Write(Const(3))), ops)
     }
 
     @Test
