@@ -10,13 +10,13 @@ import kotlin.io.path.Path
 import kotlin.io.path.deleteRecursively
 
 plugins {
-    kotlin("multiplatform") version "2.3.10"
-    id("com.gradleup.shadow") version("9.3.2")
+    kotlin("multiplatform") version "2.3.21"
+    id("com.gradleup.shadow") version("9.4.1")
 }
 
 buildscript {
     repositories.mavenCentral()
-    dependencies.classpath("com.guardsquare:proguard-base:7.8.2")
+    dependencies.classpath("com.guardsquare:proguard-base:7.9.1")
 }
 
 group = "dev.rdh"
@@ -53,8 +53,8 @@ kotlin {
 
         named("jvmMain") {
             dependencies {
-                implementation("org.ow2.asm:asm-util:9.9")
-                implementation("org.ow2.asm:asm-commons:9.9")
+                implementation("org.ow2.asm:asm-util:9.9.1")
+                implementation("org.ow2.asm:asm-commons:9.9.1")
             }
         }
 
@@ -161,7 +161,7 @@ for (file in file("src/commonTest/resources").listFiles() ?: emptyArray()) {
             group = "examples"
             description = "Run the file ${name}.b"
             args = listOf(
-                "--compile", "--time",
+                "--time",
                 file.absolutePath
             )
 
