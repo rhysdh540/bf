@@ -60,7 +60,6 @@ object Main : CommandLine() {
     }
 
     override val nativeCodeType = "JVM bytecode"
-    override val systemRunner = TODO()
 
     @JvmStatic
     fun main(args: Array<String>) = run(args)

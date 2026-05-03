@@ -29,7 +29,12 @@ data class Conditional(val offset: Int, val body: List<Op>) : Op // if non-zero
 
 data class Loop(val offset: Int, val body: List<Op>) : Op // while non-zero
 
-sealed interface Expr
+sealed interface Expr {
+    operator fun plus(other: Expr): Expr = Add(this, other)
+    operator fun times(other: Expr): Expr = Mul(this, other)
+    operator fun div(other: Int): Expr = ExactDiv(this, other)
+    operator fun unaryMinus(): Expr = Neg(this)
+}
 
 data class Const(val value: Int) : Expr
 
@@ -37,9 +42,19 @@ data class Cell(val offset: Int) : Expr
 
 data class GetTemp(val temp: Temp) : Expr
 
-data class Add(val terms: List<Expr>) : Expr
+data class Add(val terms: List<Expr>) : Expr {
+    constructor(vararg terms: Expr) : this(terms.toList())
+    init {
+        require(terms.isNotEmpty()) { "empty add" }
+    }
+}
 
-data class Mul(val factors: List<Expr>) : Expr
+data class Mul(val factors: List<Expr>) : Expr {
+    constructor(vararg factors: Expr) : this(factors.toList())
+    init {
+        require(factors.isNotEmpty()) { "empty mul" }
+    }
+}
 
 data class Neg(val value: Expr) : Expr
 

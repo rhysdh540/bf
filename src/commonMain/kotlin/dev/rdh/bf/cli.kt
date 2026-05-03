@@ -13,7 +13,7 @@ abstract class CommandLine {
     protected abstract fun exit(code: Int): Nothing
 
     protected abstract val nativeCodeType: String
-    protected abstract val systemRunner: BfRunner?
+    protected open val systemRunner: BfRunner? = null
     protected abstract val terminal: Terminal
     protected abstract val fs: FileSystem
 
@@ -121,7 +121,7 @@ abstract class CommandLine {
     }
 
     protected fun exec(literal: String) {
-        val (program, ptime) = measureTimedValue { TODO() }
+        val (program, ptime) = measureTimedValue { Parser.parse(literal) }
 
         val runner = if (compiled) systemRunner!! else Interpreter
 
