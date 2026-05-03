@@ -22,7 +22,7 @@ object Optimizer {
         if (inductionDelta == 0) return null
 
         val inv = modInverse(-inductionDelta, 1 shl Byte.SIZE_BITS) ?: return null
-        val tripCount = mul(Const(inv), Cell(candidate.guardOffset))
+        val tripCount = Const(inv) * Cell(candidate.guardOffset)
         val deltas = candidate.writes
             .filterKeys { it != candidate.guardOffset }
             .mapValues { (offset, expr) -> subtractBase(expr, offset) }
@@ -76,47 +76,49 @@ object Optimizer {
      */
     private data class Recurrence(private val coeffs: List<Expr>) {
         val isConstant: Boolean
-            get() = coeffs.drop(1).all { it == Const(0) }
+            get() = coeffs.drop(1).all { it == Const.ZERO }
 
         val constantTerm: Expr
-            get() = coeffs.firstOrNull() ?: Const(0)
+            get() = coeffs.firstOrNull() ?: Const.ZERO
 
         operator fun plus(other: Recurrence): Recurrence {
             val degree = maxOf(coeffs.size, other.coeffs.size)
             return Recurrence(
                 List(degree) { index ->
-                    add(coeffs.getOrElse(index) { Const(0) }, other.coeffs.getOrElse(index) { Const(0) })
+                    coeffs.getOrElse(index) { Const.ZERO } + other.coeffs.getOrElse(index) { Const.ZERO }
                 }
             ).trimmed()
         }
 
-        operator fun unaryMinus(): Recurrence = Recurrence(coeffs.map(::neg)).trimmed()
+        operator fun unaryMinus(): Recurrence = Recurrence(coeffs.map { -it }).trimmed()
 
         fun scaledBy(factor: Expr): Recurrence = when (factor) {
-            Const(0) -> constant(Const(0))
-            Const(1) -> this
-            else -> Recurrence(coeffs.map { coeff -> mul(coeff, factor) }).trimmed()
+            Const.ZERO -> constant(Const.ZERO)
+            Const.ONE -> this
+            else -> Recurrence(coeffs.map { coeff -> coeff * factor }).trimmed()
         }
 
         fun integrate(offset: Int): Recurrence {
-            val integrated = MutableList(coeffs.size + 1) { Const(0) as Expr }
+            val integrated = MutableList(coeffs.size + 1) { Const.ZERO as Expr }
             integrated[0] = Cell(offset)
             for ((degree, coeff) in coeffs.withIndex()) {
-                integrated[degree + 1] = add(integrated[degree + 1], coeff)
+                integrated[degree + 1] = integrated[degree + 1] + coeff
             }
             return Recurrence(integrated).trimmed()
         }
 
-        fun at(iterations: Expr): Expr = add(
-            *coeffs.mapIndexedNotNull { degree, coeff ->
-                when {
-                    coeff == Const(0) -> null
-                    degree == 0 -> coeff
-                    degree == 1 -> mul(coeff, iterations)
-                    else -> mul(coeff, Choose(iterations, degree))
+        fun at(iterations: Expr): Expr {
+            var value: Expr = Const.ZERO
+            for ((degree, coeff) in coeffs.withIndex()) {
+                if (coeff == Const.ZERO) continue
+                value += when (degree) {
+                    0 -> coeff
+                    1 -> coeff * iterations
+                    else -> coeff * choose(iterations, degree)
                 }
-            }.toTypedArray()
-        )
+            }
+            return value
+        }
 
         private fun trimmed(): Recurrence {
             val trimmed = coeffs.toMutableList()
@@ -179,7 +181,7 @@ object Optimizer {
         solved[guardOffset] = Recurrence.affine(Cell(guardOffset), Const(inductionDelta))
 
         for ((offset, delta) in deltas) {
-            if (delta == Const(0)) {
+            if (delta == Const.ZERO) {
                 solved[offset] = Recurrence.constant(Cell(offset))
             }
         }
@@ -207,7 +209,7 @@ object Optimizer {
 
         if (unresolved.isNotEmpty()) return null
 
-        val writes = mutableListOf(LoopWrite(guardOffset, Const(0)))
+        val writes = mutableListOf(LoopWrite(guardOffset, Const.ZERO))
         for (offset in deltas.keys) {
             val exit = solved.getValue(offset).at(tripCount)
             if (exit != Cell(offset)) {
@@ -275,15 +277,15 @@ object Optimizer {
         is Const -> expr
         is Cell -> mapping[expr.offset] ?: expr
         is GetTemp -> expr
-        is Add -> add(*expr.terms.map { substituteOffsets(it, mapping) }.toTypedArray())
-        is Mul -> mul(*expr.factors.map { substituteOffsets(it, mapping) }.toTypedArray())
-        is Neg -> neg(substituteOffsets(expr.value, mapping))
-        is ExactDiv -> ExactDiv(substituteOffsets(expr.numerator, mapping), expr.divisor)
-        is Choose -> Choose(substituteOffsets(expr.value, mapping), expr.degree)
+        is Add -> expr.terms.fold(Const.ZERO as Expr) { acc, term -> acc + substituteOffsets(term, mapping) }
+        is Mul -> expr.factors.fold(Const.ONE as Expr) { acc, factor -> acc * substituteOffsets(factor, mapping) }
+        is Neg -> -substituteOffsets(expr.value, mapping)
+        is ExactDiv -> substituteOffsets(expr.numerator, mapping) / expr.divisor
+        is Choose -> choose(substituteOffsets(expr.value, mapping), expr.degree)
     }
 
     private fun subtractBase(expr: Expr, offset: Int): Expr = when (expr) {
-        is Cell -> if (expr.offset == offset) Const(0) else add(expr, neg(Cell(offset)))
+        is Cell -> if (expr.offset == offset) Const.ZERO else expr + -Cell(offset)
         is Add -> {
             var removed = false
             val remaining = mutableListOf<Expr>()
@@ -294,10 +296,10 @@ object Optimizer {
                     remaining += term
                 }
             }
-            if (removed) add(*remaining.toTypedArray()) else add(expr, neg(Cell(offset)))
+            if (removed) remaining.fold(Const.ZERO as Expr) { acc, term -> acc + term } else expr + -Cell(offset)
         }
 
-        else -> add(expr, neg(Cell(offset)))
+        else -> expr + -Cell(offset)
     }
 
     private fun toRecurrence(
@@ -315,7 +317,7 @@ object Optimizer {
         is GetTemp -> null
         is Add -> expr.terms
             .map { toRecurrence(it, solved, modifiedOffsets) ?: return null }
-            .fold(Recurrence.constant(Const(0))) { acc, recurrence -> acc + recurrence }
+            .fold(Recurrence.constant(Const.ZERO)) { acc, recurrence -> acc + recurrence }
 
         is Neg -> -(toRecurrence(expr.value, solved, modifiedOffsets) ?: return null)
         is Mul -> multiplyRecurrences(
@@ -325,24 +327,24 @@ object Optimizer {
         is ExactDiv -> {
             val numerator = toRecurrence(expr.numerator, solved, modifiedOffsets) ?: return null
             if (!numerator.isConstant) return null
-            Recurrence.constant(ExactDiv(numerator.constantTerm, expr.divisor))
+            Recurrence.constant(numerator.constantTerm / expr.divisor)
         }
 
         is Choose -> {
             val value = toRecurrence(expr.value, solved, modifiedOffsets) ?: return null
             if (!value.isConstant) return null
-            Recurrence.constant(Choose(value.constantTerm, expr.degree))
+            Recurrence.constant(choose(value.constantTerm, expr.degree))
         }
     }
 
     private fun multiplyRecurrences(factors: List<Recurrence>): Recurrence? {
-        if (factors.isEmpty()) return Recurrence.constant(Const(1))
+        if (factors.isEmpty()) return Recurrence.constant(Const.ONE)
 
         val varying = factors.filterNot { it.isConstant }
         val invariant = factors
             .filter { it.isConstant }
             .map { it.constantTerm }
-            .fold(Const(1) as Expr) { acc, expr -> mul(acc, expr) }
+            .fold(Const.ONE as Expr) { acc, expr -> acc * expr }
 
         return when (varying.size) {
             0 -> Recurrence.constant(invariant)

@@ -1,57 +1,14 @@
 package dev.rdh.bf
 
-internal fun add(vararg terms: Expr): Expr {
-    val flat = mutableListOf<Expr>()
-    var constant = 0
+internal fun choose(value: Expr, degree: Int): Expr {
+    require(degree >= 0) { "negative choose degree: $degree" }
 
-    for (term in terms) {
-        when (term) {
-            is Const -> constant += term.value
-            is Add -> flat += term.terms
-            else -> flat += term
-        }
+    return when {
+        degree == 0 -> Const.ONE
+        degree == 1 -> value
+        value is Const -> Const(chooseConst(value.value.toLong(), degree).toInt())
+        else -> Choose(value, degree)
     }
-
-    val filtered = flat.filterNot { it == Const(0) }.toMutableList()
-    if (constant != 0) filtered += Const(constant)
-
-    return when (filtered.size) {
-        0 -> Const(0)
-        1 -> filtered.single()
-        else -> Add(filtered)
-    }
-}
-
-internal fun mul(vararg factors: Expr): Expr {
-    val flat = mutableListOf<Expr>()
-    var constant = 1
-
-    for (factor in factors) {
-        when (factor) {
-            is Const -> {
-                if (factor.value == 0) return Const(0)
-                constant *= factor.value
-            }
-
-            is Mul -> flat += factor.factors
-            else -> flat += factor
-        }
-    }
-
-    val filtered = flat.filterNot { it == Const(1) }.toMutableList()
-    if (constant != 1 || filtered.isEmpty()) filtered.add(0, Const(constant))
-
-    return when (filtered.size) {
-        0 -> Const(1)
-        1 -> filtered.single()
-        else -> Mul(filtered)
-    }
-}
-
-internal fun neg(value: Expr): Expr = when (value) {
-    is Const -> Const(-value.value)
-    is Neg -> value.value
-    else -> Neg(value)
 }
 
 internal fun Expr.readOffsets(): List<Int> = when (this) {
@@ -74,18 +31,25 @@ internal fun substitute(
     is Const -> expr
     is Cell -> readCell(ptrOffset + expr.offset)
     is GetTemp -> readTemp(expr.temp)
-    is Add -> add(*expr.terms.map { substitute(it, ptrOffset, readCell, readTemp) ?: return null }.toTypedArray())
-    is Mul -> mul(*expr.factors.map { substitute(it, ptrOffset, readCell, readTemp) ?: return null }.toTypedArray())
-    is Neg -> neg(substitute(expr.value, ptrOffset, readCell, readTemp) ?: return null)
-    is ExactDiv -> {
-        val numerator = substitute(expr.numerator, ptrOffset, readCell, readTemp) ?: return null
-        ExactDiv(numerator, expr.divisor)
+    is Add -> {
+        var sum: Expr = Const.ZERO
+        for (term in expr.terms) {
+            sum += substitute(term, ptrOffset, readCell, readTemp) ?: return null
+        }
+        sum
     }
 
-    is Choose -> {
-        val value = substitute(expr.value, ptrOffset, readCell, readTemp) ?: return null
-        Choose(value, expr.degree)
+    is Mul -> {
+        var product: Expr = Const.ONE
+        for (factor in expr.factors) {
+            product *= substitute(factor, ptrOffset, readCell, readTemp) ?: return null
+        }
+        product
     }
+
+    is Neg -> -(substitute(expr.value, ptrOffset, readCell, readTemp) ?: return null)
+    is ExactDiv -> (substitute(expr.numerator, ptrOffset, readCell, readTemp) ?: return null) / expr.divisor
+    is Choose -> choose(substitute(expr.value, ptrOffset, readCell, readTemp) ?: return null, expr.degree)
 }
 
 internal fun <T> orderWrites(
@@ -145,4 +109,18 @@ internal fun Expr.additiveDelta(offset: Int): Int? = when (this) {
     }
 
     else -> null
+}
+
+private fun chooseConst(value: Long, degree: Int): Long {
+    var result = 1L
+    for (i in 0 until degree) {
+        result = exactDivide(result * (value - i), i + 1L)
+    }
+    return result
+}
+
+private fun exactDivide(numerator: Long, divisor: Long): Long {
+    require(divisor != 0L) { "division by zero" }
+    require(numerator % divisor == 0L) { "inexact division: $numerator / $divisor" }
+    return numerator / divisor
 }

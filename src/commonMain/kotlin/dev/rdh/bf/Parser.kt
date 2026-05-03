@@ -5,8 +5,7 @@ import dev.rdh.bf.scev.Optimizer
 object Parser {
     fun parse(program: CharSequence): List<Op> {
         val stack = mutableListOf(RegionBuilder())
-        var nextTempId = 0
-        val nextTemp = { Temp(nextTempId++) }
+        val nextTemp = generateSequence(0) { it + 1 }.map(::Temp).iterator()::next
 
         for (c in program) {
             when (c) {
@@ -167,11 +166,11 @@ object Parser {
         is Const -> expr
         is Cell -> snapshots[expr.offset]?.let(::GetTemp) ?: expr
         is GetTemp -> expr
-        is Add -> add(*expr.terms.map { substituteCells(it, snapshots) }.toTypedArray())
-        is Mul -> mul(*expr.factors.map { substituteCells(it, snapshots) }.toTypedArray())
-        is Neg -> neg(substituteCells(expr.value, snapshots))
-        is ExactDiv -> ExactDiv(substituteCells(expr.numerator, snapshots), expr.divisor)
-        is Choose -> Choose(substituteCells(expr.value, snapshots), expr.degree)
+        is Add -> expr.terms.fold(Const.ZERO as Expr) { acc, term -> acc + substituteCells(term, snapshots) }
+        is Mul -> expr.factors.fold(Const.ONE as Expr) { acc, factor -> acc * substituteCells(factor, snapshots) }
+        is Neg -> -substituteCells(expr.value, snapshots)
+        is ExactDiv -> substituteCells(expr.numerator, snapshots) / expr.divisor
+        is Choose -> choose(substituteCells(expr.value, snapshots), expr.degree)
     }
 
     private class RegionBuilder {

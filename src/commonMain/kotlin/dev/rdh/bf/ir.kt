@@ -30,27 +30,64 @@ data class Conditional(val offset: Int, val body: List<Op>) : Op // if non-zero
 data class Loop(val offset: Int, val body: List<Op>) : Op // while non-zero
 
 sealed interface Expr {
-    operator fun plus(other: Expr): Expr = Add(this, other)
-    operator fun times(other: Expr): Expr = Mul(this, other)
-    operator fun div(other: Int): Expr = ExactDiv(this, other)
+    operator fun plus(other: Expr): Expr {
+        val terms = arrayOf(this, other)
+        val flat = mutableListOf<Expr>()
+        var constant = 0
+        for (term in terms) {
+            when (term) {
+                is Const -> constant += term.value
+                is Add -> flat += term.terms
+                else -> flat += term
+            }
+        }
+        val filtered = flat.filterNot { it == Const.ZERO }.toMutableList()
+        if (constant != 0) filtered += Const(constant)
+        return when (filtered.size) {
+            0 -> Const.ZERO
+            1 -> filtered.single()
+            else -> Add(filtered)
+        }
+    }
+    operator fun times(other: Expr): Expr {
+        val flat = mutableListOf<Expr>()
+        var constant = 1
+
+        for (factor in arrayOf(this, other)) {
+            when (factor) {
+                is Const -> {
+                    if (factor.value == 0) return Const.ZERO
+                    constant *= factor.value
+                }
+
+                is Mul -> flat += factor.factors
+                else -> flat += factor
+            }
+        }
+
+        val filtered = flat.filterNot { it == Const.ONE }.toMutableList()
+        if (constant != 1 || filtered.isEmpty()) filtered.add(0, Const(constant))
+
+        return when (filtered.size) {
+            0 -> Const.ONE
+            1 -> filtered.single()
+            else -> Mul(filtered)
+        }
+    }
+    operator fun div(other: Int): Expr {
+        if (other == 1) return this
+        return ExactDiv(this, other)
+    }
     operator fun unaryMinus(): Expr = Neg(this)
 }
 
 data class Const(val value: Int) : Expr {
-    override fun plus(other: Expr): Expr = when (other) {
-        is Const -> Const(value + other.value)
-        else -> super.plus(other)
-    }
-    override fun times(other: Expr): Expr = when (other) {
-        is Const -> Const(value * other.value)
-        else -> super.times(other)
-    }
-    override fun div(other: Int): Expr = when (other) {
-        1 -> this
-        else -> super.div(other)
-    }
     override fun unaryMinus(): Expr = Const(-value)
-
+    override fun div(other: Int): Expr {
+        if (other == 1) return this
+        if (value % other == 0) return Const(value / other)
+        error("inexact division: $value / $other")
+    }
     companion object {
         val ZERO = Const(0)
         val ONE = Const(1)
@@ -75,7 +112,9 @@ data class Mul(val factors: List<Expr>) : Expr {
     }
 }
 
-data class Neg(val value: Expr) : Expr
+data class Neg(val value: Expr) : Expr {
+    override fun unaryMinus(): Expr = value
+}
 
 /**
  * **EXACT** division in the widened domain before the eventual byte truncation
