@@ -66,10 +66,28 @@ internal class SymbolicState(
 
     fun writes(): Map<Int, Expr> = state.toMap()
 
+    fun hasExternalReads(offsets: Iterable<Int>): Boolean {
+        val targetSet = offsets.toSet()
+        if (targetSet.isEmpty()) return false
+
+        if (temps.values.any { expr -> expr.readOffsets().any { it in targetSet } }) {
+            return true
+        }
+
+        return state.any { (offset, expr) ->
+            offset !in targetSet && expr.readOffsets().any { it in targetSet }
+        }
+    }
+
     fun forgetCells(offsets: Iterable<Int>) {
         for (offset in offsets) {
             state.remove(offset)
         }
+    }
+
+    fun clearFacts() {
+        state.clear()
+        temps.clear()
     }
 
     fun materializeBoundary() {

@@ -16,10 +16,26 @@ object Optimizer {
     fun analyzeLoop(body: List<Op>): LoopSummary? = analyzeLoop(body) { Cell(it) }
 
     fun analyzeLoop(body: List<Op>, readCell: (Int) -> Expr): LoopSummary? {
+        val plainCandidate = extractCandidate(body) { Cell(it) } ?: return null
+        val safeEntryOffsets = plainCandidate.writes
+            .filterKeys { it != 0 }
+            .filterValues { expr ->
+                expr.readOffsets().none { it in plainCandidate.writes.keys }
+            }
+            .keys
+
         val entryBase: (Int) -> Expr = { offset ->
-            if (offset == 0) Cell(0) else readCell(offset)
+            when {
+                offset == 0 -> Cell(0)
+                offset in safeEntryOffsets -> readCell(offset)
+                else -> Cell(offset)
+            }
         }
-        val candidate = extractCandidate(body, entryBase) ?: return null
+        val candidate = if (safeEntryOffsets.isEmpty()) {
+            plainCandidate
+        } else {
+            extractCandidate(body, entryBase) ?: plainCandidate
+        }
         if (candidate.pointerDelta != 0) return null
 
         val inductionExpr = candidate.writes[candidate.guardOffset] ?: return null

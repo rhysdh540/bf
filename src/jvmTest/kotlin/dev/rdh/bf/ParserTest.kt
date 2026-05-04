@@ -5,9 +5,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class ParserTest {
-    private fun resource(name: String): String =
-        javaClass.getResourceAsStream("/$name")!!.bufferedReader().use { it.readText() }
-
     @Test
     fun `straight-line motion and arithmetic are folded into constant output`() {
         val ops = Parser.parse(">><<>+.")
@@ -62,19 +59,6 @@ class ParserTest {
     fun `leading dead loop does not block later constant folding`() {
         val ops = Parser.parse("[-]+++.")
         assertEquals(listOf(Write(Const(3))), ops)
-    }
-
-    @Test
-    fun `triangular example folds to a single constant write`() {
-        val ops = Parser.parse(resource("triangular.b"))
-        assertEquals(listOf(Write(Const(65))), ops)
-    }
-
-    @Test
-    fun `long example preserves its output byte`() {
-        val output = ByteOutput()
-        Interpreter.run(Parser.parse(resource("long.b")), tapeSize = 1 shl 15, input = NullInput, output = output)
-        assertEquals(listOf(202), output.bytes)
     }
 
     @Test

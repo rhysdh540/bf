@@ -88,6 +88,14 @@ object Parser {
             return lowered
         }
 
+        fun prepareForWrites(offsets: Iterable<Int>) {
+            val absoluteOffsets = offsets.map { state.ptrOffset + it }
+            if (state.hasExternalReads(absoluteOffsets)) {
+                materializePending()
+                state.clearFacts()
+            }
+        }
+
         for ((index, op) in ops.withIndex()) {
             when (op) {
                 is MovePtr, is SetTemp, is Store -> if (!state.apply(op)) {
@@ -95,6 +103,7 @@ object Parser {
                 }
 
                 is Read -> {
+                    prepareForWrites(listOf(op.offset))
                     val absOffset = state.ptrOffset + op.offset
                     lowered += Read(absOffset)
                     state.writeCell(absOffset, Cell(absOffset))
