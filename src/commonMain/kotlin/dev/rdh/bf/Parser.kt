@@ -139,6 +139,7 @@ object Parser {
                         prepareForWrites(listOf(step.offset))
                         val absOffset = state.ptrOffset + step.offset
                         emit(Read(absOffset))
+                        state.forgetCells(listOf(absOffset))
                         state.writeCell(absOffset, Cell(absOffset))
                     }
 
@@ -152,8 +153,8 @@ object Parser {
 
                 is AnalysisSummary -> {
                     val basePtr = state.ptrOffset
-                    val guard = state.readCellForControl(basePtr + op.summary.guardOffset)
-                    if (guard is Const && validateLoopSummary(op.body, op.summary) { offset -> state.readCell(basePtr + offset) } == false) {
+                    val guard = state.readControl(basePtr + op.summary.guardOffset)
+                    if (guard.expr is Const && validateLoopSummary(op.body, op.summary) { offset -> state.readCell(basePtr + offset) } == false) {
                         val effect = controlEffect(op.body)
                         materializePending()
                         emit(AnalysisLoop(op.summary.guardOffset, op.body))
@@ -191,9 +192,10 @@ object Parser {
                     }
 
                     val basePtr = state.ptrOffset
-                    when (state.readCellForControl(basePtr + op.offset)) {
-                        Const.ZERO -> {}
-                        is Const -> {
+                    val guard = state.readControl(basePtr + op.offset)
+                    when {
+                        guard.isZero -> {}
+                        guard.definitelyNonZero -> {
                             for (inner in op.body) {
                                 when (inner) {
                                     is AnalysisStep -> {
@@ -205,7 +207,7 @@ object Parser {
                                     }
 
                                     is AnalysisSummary -> {
-                                        val innerGuard = state.readCellForControl(state.ptrOffset + inner.summary.guardOffset)
+                                        val innerGuard = state.readControl(state.ptrOffset + inner.summary.guardOffset)
                                         if (!applyLoopSummary(state, state.ptrOffset, inner.summary, innerGuard)) {
                                             return stopWithRaw(index)
                                         }
@@ -248,12 +250,17 @@ object Parser {
                     }
 
                     val basePtr = state.ptrOffset
-                    when (val guard = state.readCellForControl(basePtr + op.offset)) {
-                        Const.ZERO -> {}
+                    val guard = state.readControl(basePtr + op.offset)
+                    when {
+                        guard.isZero -> {}
                         else -> {
-                            val summary = Optimizer.analyzeLoopAnalysis(op.body) { offset -> state.readRelative(basePtr, offset) }
+                            val summary = Optimizer.analyzeLoopAnalysis(
+                                body = op.body,
+                                readCell = { offset -> state.readRelative(basePtr, offset) },
+                                knownNonZeroOffsets = state.knownRelativeNonZeroOffsets(basePtr) + op.offset,
+                            )
                                 ?.takeIf { candidate ->
-                                    guard !is Const || validateLoopSummary(op.body, candidate) { offset ->
+                                    guard.expr !is Const || validateLoopSummary(op.body, candidate) { offset ->
                                         state.readCell(basePtr + offset)
                                     } != false
                                 }
@@ -263,7 +270,7 @@ object Parser {
                                     if (!applyLoopSummary(state, basePtr, summary, guard)) return stopWithRaw(index)
                                 }
 
-                                summary != null && guard is Const && guard.value != 0 -> {
+                                summary != null && guard.definitelyNonZero -> {
                                     if (!applyLoopSummary(state, basePtr, summary, guard)) return stopWithRaw(index)
                                 }
 

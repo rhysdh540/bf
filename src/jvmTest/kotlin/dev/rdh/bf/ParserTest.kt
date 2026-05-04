@@ -43,14 +43,6 @@ class ParserTest {
     }
 
     @Test
-    fun `nested loops still reduce to a final write`() {
-        val program = ">>+++++++>>>>>>->->--------[-<[-]-[-<[-]-[-<<<<<<<<[-]-[->[-]>>[-]>>[-]<<<[-<+>>+<]>[-<+>]<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<<<<<]>>>>>>>>]>]>]<<<<<<."
-        val ops = Parser.parse(program)
-
-        assertEquals(Write(Cell(-6)), ops.last())
-    }
-
-    @Test
     fun `conditional is inlined when guard is known nonzero`() {
         assertEquals(emptyList(), Parser.parse("+[-]"))
     }

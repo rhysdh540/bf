@@ -18,11 +18,16 @@ object Optimizer {
     fun analyzeLoop(body: List<Op>, readCell: (Int) -> Expr): LoopSummary? =
         analyzeLoopAnalysis(body.map(Op::toAnalysisOp), readCell)
 
-    internal fun analyzeLoopAnalysis(body: List<AnalysisOp>): LoopSummary? = analyzeLoopAnalysis(body) { Cell(it) }
+    internal fun analyzeLoopAnalysis(body: List<AnalysisOp>): LoopSummary? =
+        analyzeLoopAnalysis(body, readCell = { Cell(it) })
 
-    internal fun analyzeLoopAnalysis(body: List<AnalysisOp>, readCell: (Int) -> Expr): LoopSummary? {
+    internal fun analyzeLoopAnalysis(
+        body: List<AnalysisOp>,
+        readCell: (Int) -> Expr,
+        knownNonZeroOffsets: Set<Int> = setOf(0),
+    ): LoopSummary? {
         val modifiedOffsets = controlEffect(body).modifiedOffsets
-        val plainCandidate = extractCandidate(body) { Cell(it) }
+        val plainCandidate = extractCandidate(body, entryCell = { Cell(it) })
         val entryBackedOffsets = plainCandidate?.writes
             ?.filter { (offset, expr) ->
                 offset != 0 && offset !in expr.readOffsets()
@@ -39,7 +44,7 @@ object Optimizer {
                 else -> Cell(offset)
             }
         }
-        val candidate = extractCandidate(body, entryBase) ?: plainCandidate ?: return null
+        val candidate = extractCandidate(body, entryBase, knownNonZeroOffsets) ?: plainCandidate ?: return null
         return summarizeWithPeeling(candidate, entryBase)
     }
 
@@ -290,8 +295,12 @@ object Optimizer {
         return orderWrites(writes, LoopWrite::offset, LoopWrite::value)
     }
 
-    private fun extractCandidate(body: List<AnalysisOp>, entryCell: (Int) -> Expr): Candidate? {
-        val state = SymbolicState(entryCell, exactCells = false)
+    private fun extractCandidate(
+        body: List<AnalysisOp>,
+        entryCell: (Int) -> Expr,
+        knownNonZeroOffsets: Set<Int> = setOf(0),
+    ): Candidate? {
+        val state = SymbolicState(entryCell, exactCells = false, knownNonZeroOffsets = knownNonZeroOffsets + 0)
 
         fun execute(ops: List<AnalysisOp>): Boolean {
             for (op in ops) {
@@ -304,29 +313,34 @@ object Optimizer {
 
                     is AnalysisSummary -> {
                         val basePtr = state.ptrOffset
-                        val guard = state.readCellForControl(basePtr + op.summary.guardOffset)
-                        if (guard is Const && validateLoopSummary(op.body, op.summary) { offset -> state.readCell(basePtr + offset) } == false) {
+                        val guard = state.readControl(basePtr + op.summary.guardOffset)
+                        if (guard.expr is Const && validateLoopSummary(op.body, op.summary) { offset -> state.readCell(basePtr + offset) } == false) {
                             return false
                         }
                         if (!applyLoopSummary(state, basePtr, op.summary, guard)) return false
                     }
 
                     is AnalysisConditional -> {
-                        val guard = state.readCellForControl(state.ptrOffset + op.offset)
-                        when (guard) {
-                            Const.ZERO -> {}
-                            is Const -> if (!execute(op.body)) return false
+                        val guard = state.readControl(state.ptrOffset + op.offset)
+                        when {
+                            guard.isZero -> {}
+                            guard.definitelyNonZero -> if (!execute(op.body)) return false
                             else -> return false
                         }
                     }
 
                     is AnalysisLoop -> {
                         val basePtr = state.ptrOffset
-                        when (val guard = state.readCellForControl(basePtr + op.offset)) {
-                            Const.ZERO -> {}
+                        val guard = state.readControl(basePtr + op.offset)
+                        when {
+                            guard.isZero -> {}
                             else -> {
-                                val summary = analyzeLoopAnalysis(op.body) { offset -> state.readRelative(basePtr, offset) } ?: return false
-                                if (guard is Const && validateLoopSummary(op.body, summary) { offset -> state.readCell(basePtr + offset) } == false) {
+                                val summary = analyzeLoopAnalysis(
+                                    body = op.body,
+                                    readCell = { offset -> state.readRelative(basePtr, offset) },
+                                    knownNonZeroOffsets = state.knownRelativeNonZeroOffsets(basePtr) + op.offset,
+                                ) ?: return false
+                                if (guard.expr is Const && validateLoopSummary(op.body, summary) { offset -> state.readCell(basePtr + offset) } == false) {
                                     return false
                                 }
                                 if (!applyLoopSummary(state, basePtr, summary, guard)) return false

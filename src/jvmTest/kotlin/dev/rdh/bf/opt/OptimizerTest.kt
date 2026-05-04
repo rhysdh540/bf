@@ -11,7 +11,9 @@ import dev.rdh.bf.Read
 import dev.rdh.bf.Store
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class OptimizerTest {
     @Test
@@ -163,6 +165,24 @@ class OptimizerTest {
             ),
             summary
         )
+    }
+
+    @Test
+    fun `peeled summaries apply under proven nonzero guards`() {
+        val summary = assertNotNull(
+            Optimizer.analyzeLoop(
+                listOf<Op>(
+                    Store(4, Add(Cell(4), Cell(1))),
+                    Store(1, Const(7)),
+                    Store(0, Add(Cell(0), Const(-1))),
+                )
+            )
+        )
+        val state = SymbolicState({ Cell(it) }, exactCells = false, knownNonZeroOffsets = setOf(0))
+
+        assertTrue(applyLoopSummary(state, 0, summary, state.readControl(0)))
+        assertEquals(Const.ZERO, state.readCell(0))
+        assertEquals(Const(7), state.readCell(1))
     }
 
     @Test

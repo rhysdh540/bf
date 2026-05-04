@@ -6,11 +6,12 @@ internal fun applyLoopSummary(
     state: SymbolicState,
     basePtr: Int,
     summary: Optimizer.LoopSummary,
-    guard: Expr,
+    guard: ControlValue,
 ): Boolean {
+    if (guard.isZero) return true
+
     if (summary.prologue.isNotEmpty()) {
-        val guardConst = guard as? Const ?: return false
-        if (guardConst.value == 0) return true
+        if (!guard.definitelyNonZero) return false
         if (!state.applyWrites(basePtr, summary.prologue.map { it.offset to it.value })) return false
     }
 
