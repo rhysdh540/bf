@@ -1,9 +1,16 @@
 package dev.rdh.bf
 
+import dev.rdh.bf.opt.AnalysisConditional
+import dev.rdh.bf.opt.AnalysisLoop
+import dev.rdh.bf.opt.AnalysisOp
+import dev.rdh.bf.opt.AnalysisStep
+import dev.rdh.bf.opt.AnalysisSummary
 import dev.rdh.bf.opt.Optimizer
 import dev.rdh.bf.opt.SymbolicState
 import dev.rdh.bf.opt.applyLoopSummary
 import dev.rdh.bf.opt.controlEffect
+import dev.rdh.bf.opt.toAnalysisOp
+import dev.rdh.bf.opt.validateLoopSummary
 
 object Parser {
     fun parse(program: CharSequence): List<Op> {
@@ -23,50 +30,75 @@ object Parser {
                     val body = stack.removeLastOrNull()?.finish(
                         cellDefault = { Cell(it) },
                         eliminateDeadWrites = false,
+                        analyzeLoops = false,
                         nextTemp = nextTemp,
                     ) ?: error("Unexpected ]")
                     val parent = stack.lastOrNull() ?: error("Unexpected ]")
-                    parent += Loop(0, body)
+                    parent += AnalysisLoop(0, body)
                 }
             }
         }
 
-        return stack.singleOrNull()?.finish(
+        val ops = stack.singleOrNull()?.finish(
             cellDefault = { Const(0) },
             eliminateDeadWrites = true,
+            analyzeLoops = true,
             nextTemp = nextTemp,
         ) ?: error("Unclosed [")
+        return lowerAnalysisOps(ops, nextTemp)
     }
 
     private fun lowerLoopSummary(
-        body: List<Op>,
-        summary: Optimizer.LoopSummary?,
+        summary: Optimizer.LoopSummary,
         nextTemp: () -> Temp,
-    ): List<Op> = when (summary) {
-        null -> listOf(Loop(0, body))
-        else -> {
-            val lowered = buildList {
-                addAll(lowerStores(summary.prologue.map { Store(it.offset, it.value) }, nextTemp))
-                addAll(lowerStores(summary.writes.map { Store(it.offset, it.value) }, nextTemp))
-                if (summary.pointerDelta != 0) {
-                    add(MovePtr(summary.pointerDelta))
-                }
+    ): List<Op> {
+        val lowered = buildList {
+            addAll(lowerStores(summary.prologue.map { Store(it.offset, it.value) }, nextTemp))
+            addAll(lowerStores(summary.writes.map { Store(it.offset, it.value) }, nextTemp))
+            if (summary.pointerDelta != 0) {
+                add(MovePtr(summary.pointerDelta))
             }
+        }
+        return if (summary.prologue.isEmpty()) lowered else listOf(Conditional(summary.guardOffset, lowered))
+    }
 
-            if (summary.prologue.isEmpty()) lowered else listOf(Conditional(summary.guardOffset, lowered))
+    private fun lowerAnalysisOps(
+        ops: List<AnalysisOp>,
+        nextTemp: () -> Temp,
+    ): List<Op> = buildList {
+        for (op in ops) {
+            when (op) {
+                is AnalysisStep -> add(op.op)
+                is AnalysisConditional -> add(Conditional(op.offset, lowerAnalysisOps(op.body, nextTemp)))
+                is AnalysisLoop -> add(Loop(op.offset, lowerAnalysisOps(op.body, nextTemp)))
+                is AnalysisSummary -> addAll(lowerLoopSummary(op.summary, nextTemp))
+            }
         }
     }
 
     private fun normalize(
-        ops: List<Op>,
+        ops: List<AnalysisOp>,
         cellDefault: (Int) -> Expr,
         eliminateDeadWrites: Boolean,
+        analyzeLoops: Boolean,
         nextTemp: () -> Temp,
-    ): List<Op> {
+    ): List<AnalysisOp> {
         if (ops.isEmpty()) return emptyList()
 
         val state = SymbolicState(cellDefault)
-        val lowered = mutableListOf<Op>()
+        val lowered = mutableListOf<AnalysisOp>()
+
+        fun emit(op: Op) {
+            lowered += op.toAnalysisOp()
+        }
+
+        fun emit(analysisOp: AnalysisOp) {
+            lowered += analysisOp
+        }
+
+        fun emitAll(ops: Iterable<Op>) {
+            ops.forEach(::emit)
+        }
 
         fun materializePending() {
             val writes = orderWrites(
@@ -75,14 +107,14 @@ object Parser {
                 Store::offset,
                 Store::value,
             )
-            lowered += lowerStores(writes, nextTemp)
+            emitAll(lowerStores(writes, nextTemp))
             if (state.ptrOffset != 0) {
-                lowered += MovePtr(state.ptrOffset)
+                emit(MovePtr(state.ptrOffset))
             }
             state.materializeBoundary()
         }
 
-        fun stopWithRaw(from: Int): List<Op> {
+        fun stopWithRaw(from: Int): List<AnalysisOp> {
             materializePending()
             lowered += ops.drop(from)
             return lowered
@@ -98,54 +130,133 @@ object Parser {
 
         for ((index, op) in ops.withIndex()) {
             when (op) {
-                is MovePtr, is SetTemp, is Store -> if (!state.apply(op)) {
-                    return stopWithRaw(index)
+                is AnalysisStep -> when (val step = op.op) {
+                    is MovePtr, is SetTemp, is Store -> if (!state.apply(step)) {
+                        return stopWithRaw(index)
+                    }
+
+                    is Read -> {
+                        prepareForWrites(listOf(step.offset))
+                        val absOffset = state.ptrOffset + step.offset
+                        emit(Read(absOffset))
+                        state.writeCell(absOffset, Cell(absOffset))
+                    }
+
+                    is Write -> {
+                        val value = state.eval(step.value) ?: return stopWithRaw(index)
+                        emit(Write(stripTopByte(value)))
+                    }
+
+                    else -> error("Unexpected control op in AnalysisStep: $step")
                 }
 
-                is Read -> {
-                    prepareForWrites(listOf(op.offset))
-                    val absOffset = state.ptrOffset + op.offset
-                    lowered += Read(absOffset)
-                    state.writeCell(absOffset, Cell(absOffset))
+                is AnalysisSummary -> {
+                    val basePtr = state.ptrOffset
+                    val guard = state.readCellForControl(basePtr + op.summary.guardOffset)
+                    if (guard is Const && validateLoopSummary(op.body, op.summary) { offset -> state.readCell(basePtr + offset) } == false) {
+                        val effect = controlEffect(op.body)
+                        materializePending()
+                        emit(AnalysisLoop(op.summary.guardOffset, op.body))
+                        if (effect.pointerDelta != 0) {
+                            lowered += ops.drop(index + 1)
+                            return lowered
+                        }
+                        state.clearFacts()
+                        continue
+                    }
+                    if (applyLoopSummary(state, basePtr, op.summary, guard)) {
+                        continue
+                    }
+
+                    materializePending()
+                    emit(op)
+                    if (op.summary.pointerDelta != 0) {
+                        lowered += ops.drop(index + 1)
+                        return lowered
+                    }
+                    state.clearFacts()
                 }
 
-                is Write -> {
-                    val value = state.eval(op.value) ?: return stopWithRaw(index)
-                    lowered += Write(stripTopByte(value))
-                }
+                is AnalysisConditional -> {
+                    if (!analyzeLoops) {
+                        val effect = controlEffect(op.body)
+                        materializePending()
+                        emit(op)
+                        if (effect.pointerDelta != 0) {
+                            lowered += ops.drop(index + 1)
+                            return lowered
+                        }
+                        state.clearFacts()
+                        continue
+                    }
 
-                is Conditional -> {
                     val basePtr = state.ptrOffset
                     when (state.readCellForControl(basePtr + op.offset)) {
                         Const.ZERO -> {}
                         is Const -> {
-                            if (op.body.any { it !is MovePtr && it !is SetTemp && it !is Store }) {
-                                return stopWithRaw(index)
-                            }
                             for (inner in op.body) {
-                                if (!state.apply(inner)) return stopWithRaw(index)
+                                when (inner) {
+                                    is AnalysisStep -> {
+                                        val innerStep = inner.op
+                                        if (innerStep !is MovePtr && innerStep !is SetTemp && innerStep !is Store) {
+                                            return stopWithRaw(index)
+                                        }
+                                        if (!state.apply(innerStep)) return stopWithRaw(index)
+                                    }
+
+                                    is AnalysisSummary -> {
+                                        val innerGuard = state.readCellForControl(state.ptrOffset + inner.summary.guardOffset)
+                                        if (!applyLoopSummary(state, state.ptrOffset, inner.summary, innerGuard)) {
+                                            return stopWithRaw(index)
+                                        }
+                                    }
+
+                                    else -> return stopWithRaw(index)
+                                }
                             }
                         }
 
                         else -> {
                             val effect = controlEffect(op.body)
                             materializePending()
-                            lowered += op
+                            emit(op)
                             if (effect.pointerDelta != 0) {
                                 lowered += ops.drop(index + 1)
                                 return lowered
                             }
-                            state.forgetCells(effect.modifiedOffsets)
+                            state.clearFacts()
                         }
                     }
                 }
 
-                is Loop -> {
+                is AnalysisLoop -> {
+                    if (!analyzeLoops) {
+                        val effect = controlEffect(op.body)
+                        val summary = Optimizer.analyzeLoopAnalysis(op.body)
+                        val isLeafLoop = op.body.all { it is AnalysisStep }
+                        materializePending()
+                        when {
+                            summary != null && summary.prologue.isEmpty() && isLeafLoop -> emit(AnalysisSummary(op.body, summary))
+                            else -> emit(op)
+                        }
+                        if (effect.pointerDelta != 0) {
+                            lowered += ops.drop(index + 1)
+                            return lowered
+                        }
+                        state.clearFacts()
+                        continue
+                    }
+
                     val basePtr = state.ptrOffset
                     when (val guard = state.readCellForControl(basePtr + op.offset)) {
                         Const.ZERO -> {}
                         else -> {
-                            val summary = Optimizer.analyzeLoop(op.body) { offset -> state.readRelativeForControl(basePtr, offset) }
+                            val summary = Optimizer.analyzeLoopAnalysis(op.body) { offset -> state.readRelative(basePtr, offset) }
+                                ?.takeIf { candidate ->
+                                    guard !is Const || validateLoopSummary(op.body, candidate) { offset ->
+                                        state.readCell(basePtr + offset)
+                                    } != false
+                                }
 
                             when {
                                 summary != null && summary.prologue.isEmpty() -> {
@@ -158,19 +269,19 @@ object Parser {
 
                                 summary != null -> {
                                     materializePending()
-                                    lowered += lowerLoopSummary(op.body, summary, nextTemp)
-                                    state.forgetCells((summary.prologue + summary.writes).map { it.offset }.toSet())
+                                    emit(AnalysisSummary(op.body, summary))
+                                    state.clearFacts()
                                 }
 
                                 else -> {
                                     val effect = controlEffect(op.body)
                                     materializePending()
-                                    lowered += op
+                                    emit(op)
                                     if (effect.pointerDelta != 0) {
                                         lowered += ops.drop(index + 1)
                                         return lowered
                                     }
-                                    state.forgetCells(effect.modifiedOffsets)
+                                    state.clearFacts()
                                 }
                             }
                         }
@@ -227,49 +338,65 @@ object Parser {
     }
 
     private class RegionBuilder {
-        private val ops = mutableListOf<Op>()
+        private val ops = mutableListOf<AnalysisOp>()
 
         operator fun plusAssign(op: Op) {
+            this += op.toAnalysisOp()
+        }
+
+        operator fun plusAssign(op: AnalysisOp) {
             when (op) {
-                is MovePtr -> appendMove(op)
-                is Store -> appendStore(op)
+                is AnalysisStep -> when (val step = op.op) {
+                    is MovePtr -> appendMove(step)
+                    is Store -> appendStore(step)
+                    else -> ops += op
+                }
+
                 else -> ops += op
             }
         }
 
-        operator fun plusAssign(ops: Iterable<Op>) {
+        operator fun plusAssign(ops: Iterable<AnalysisOp>) {
             ops.forEach { this += it }
         }
 
         fun finish(
             cellDefault: (Int) -> Expr,
             eliminateDeadWrites: Boolean,
+            analyzeLoops: Boolean,
             nextTemp: () -> Temp,
-        ): List<Op> = normalize(ops, cellDefault, eliminateDeadWrites, nextTemp)
+        ): List<AnalysisOp> {
+            var current = ops.toList()
+            while (true) {
+                val normalized = normalize(current, cellDefault, eliminateDeadWrites, analyzeLoops, nextTemp)
+                if (normalized == current) return normalized
+                current = normalized
+            }
+        }
 
         private fun appendMove(op: MovePtr) {
             if (op.delta == 0) return
 
-            val prev = ops.lastOrNull()
-            if (prev is MovePtr) {
+            val prev = (ops.lastOrNull() as? AnalysisStep)?.op as? MovePtr
+            if (prev != null) {
                 ops.removeLast()
                 this += MovePtr(prev.delta + op.delta)
             } else {
-                ops += op
+                ops += AnalysisStep(op)
             }
         }
 
         private fun appendStore(op: Store) {
-            val prev = ops.lastOrNull()
-            if (prev is Store) {
+            val prev = (ops.lastOrNull() as? AnalysisStep)?.op as? Store
+            if (prev != null) {
                 val combined = combineStores(prev, op)
                 if (combined != null) {
-                    ops[ops.lastIndex] = combined
+                    ops[ops.lastIndex] = AnalysisStep(combined)
                     return
                 }
             }
 
-            ops += op
+            ops += AnalysisStep(op)
         }
 
         private fun combineStores(first: Store, second: Store): Store? {

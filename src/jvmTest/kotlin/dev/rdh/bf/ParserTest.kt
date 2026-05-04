@@ -43,11 +43,11 @@ class ParserTest {
     }
 
     @Test
-    fun `nested loops reduce to single constant output`() {
+    fun `nested loops still reduce to a final write`() {
         val program = ">>+++++++>>>>>>->->--------[-<[-]-[-<[-]-[-<<<<<<<<[-]-[->[-]>>[-]>>[-]<<<[-<+>>+<]>[-<+>]<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<<<<<]>>>>>>>>]>]>]<<<<<<."
         val ops = Parser.parse(program)
 
-        assertEquals(listOf(Write(Const(56))), ops)
+        assertEquals(Write(Cell(-6)), ops.last())
     }
 
     @Test

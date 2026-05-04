@@ -122,14 +122,17 @@ class ProgramTest {
 
     @Test
     fun bottles() {
-        val expected = (100 downTo 1).joinToString("\n") {
+        val expected = (99 downTo 1).joinToString("\n") {
+            val p = if (it == 1) "" else "s"
+            val p2 = if (it == 2) "" else "s"
             """
-                $it Bottles of beer on the wall
-                $it Bottles of beer
+                $it Bottle$p of beer on the wall
+                $it Bottle$p of beer
                 Take one down and pass it around
-                ${it - 1} Bottles of beer on the wall
+                ${it - 1} Bottle$p2 of beer on the wall
+                
             """.trimIndent()
-        }
+        }.replace("\n", "\r\n") + "\r\n"
 
         assertEquals(Result.Success(expected), runProgram("bottles", timeout = 500.milliseconds))
     }

@@ -13,31 +13,70 @@ object Optimizer {
 
     data class LoopWrite(val offset: Int, val value: Expr)
 
-    fun analyzeLoop(body: List<Op>): LoopSummary? = analyzeLoop(body) { Cell(it) }
+    fun analyzeLoop(body: List<Op>): LoopSummary? = analyzeLoopAnalysis(body.map(Op::toAnalysisOp))
 
-    fun analyzeLoop(body: List<Op>, readCell: (Int) -> Expr): LoopSummary? {
-        val plainCandidate = extractCandidate(body) { Cell(it) } ?: return null
-        val safeEntryOffsets = plainCandidate.writes
-            .filterKeys { it != 0 }
-            .filterValues { expr ->
-                expr.readOffsets().none { it in plainCandidate.writes.keys }
+    fun analyzeLoop(body: List<Op>, readCell: (Int) -> Expr): LoopSummary? =
+        analyzeLoopAnalysis(body.map(Op::toAnalysisOp), readCell)
+
+    internal fun analyzeLoopAnalysis(body: List<AnalysisOp>): LoopSummary? = analyzeLoopAnalysis(body) { Cell(it) }
+
+    internal fun analyzeLoopAnalysis(body: List<AnalysisOp>, readCell: (Int) -> Expr): LoopSummary? {
+        val modifiedOffsets = controlEffect(body).modifiedOffsets
+        val plainCandidate = extractCandidate(body) { Cell(it) }
+        val entryBackedOffsets = plainCandidate?.writes
+            ?.filter { (offset, expr) ->
+                offset != 0 && offset !in expr.readOffsets()
             }
-            .keys
+            ?.keys
+            ?: emptySet()
 
         val entryBase: (Int) -> Expr = { offset ->
             when {
                 offset == 0 -> Cell(0)
-                offset in safeEntryOffsets -> readCell(offset)
+                offset !in modifiedOffsets -> readCell(offset)
+                readCell(offset) == Const.ZERO -> Const.ZERO
+                offset in entryBackedOffsets -> readCell(offset)
                 else -> Cell(offset)
             }
         }
-        val candidate = if (safeEntryOffsets.isEmpty()) {
-            plainCandidate
-        } else {
-            extractCandidate(body, entryBase) ?: plainCandidate
-        }
+        val candidate = extractCandidate(body, entryBase) ?: plainCandidate ?: return null
+        return summarizeWithPeeling(candidate, entryBase)
+    }
+
+    private data class Candidate(
+        val guardOffset: Int,
+        val pointerDelta: Int,
+        val writes: Map<Int, Expr>,
+    )
+
+    private fun summarizeWithPeeling(
+        candidate: Candidate,
+        entryBase: (Int) -> Expr,
+        peeledPrologue: List<LoopWrite> = emptyList(),
+    ): LoopSummary? {
         if (candidate.pointerDelta != 0) return null
 
+        summarizeCandidate(candidate, entryBase)?.let { summary ->
+            return if (peeledPrologue.isEmpty()) {
+                summary
+            } else {
+                summary.copy(prologue = peeledPrologue + summary.prologue)
+            }
+        }
+
+        val peeled = peelCandidate(candidate, entryBase) ?: return null
+        val prologue = peeledPrologue + orderWrites(
+            candidate.writes.map { (offset, expr) -> LoopWrite(offset, expr) },
+            LoopWrite::offset,
+            LoopWrite::value,
+        )
+        return summarizeWithPeeling(peeled, entryBase, prologue)
+    }
+
+    private fun summarizeCandidate(
+        candidate: Candidate,
+        entryBase: (Int) -> Expr,
+    ): LoopSummary? {
         val inductionExpr = candidate.writes[candidate.guardOffset] ?: return null
         val inductionDelta = inductionExpr.additiveDelta(candidate.guardOffset) ?: return null
         if (inductionDelta == 0) return null
@@ -48,26 +87,10 @@ object Optimizer {
             .filterKeys { it != candidate.guardOffset }
             .mapValues { (offset, expr) -> subtractBase(expr, entryBase(offset)) }
 
-        solveRecurrences(
+        val writes = solveRecurrences(
             guardOffset = candidate.guardOffset,
             inductionDelta = inductionDelta,
             deltas = deltas,
-            entryBase = entryBase,
-            tripCount = tripCount,
-        )?.let { writes ->
-            return LoopSummary(
-                guardOffset = candidate.guardOffset,
-                tripCount = tripCount,
-                pointerDelta = candidate.pointerDelta,
-                writes = writes,
-            )
-        }
-
-        val substituted = propagateInvariants(candidate.guardOffset, candidate.writes, deltas) ?: return null
-        val peeledWrites = solveRecurrences(
-            guardOffset = candidate.guardOffset,
-            inductionDelta = inductionDelta,
-            deltas = substituted,
             entryBase = entryBase,
             tripCount = tripCount,
         ) ?: return null
@@ -76,20 +99,9 @@ object Optimizer {
             guardOffset = candidate.guardOffset,
             tripCount = tripCount,
             pointerDelta = candidate.pointerDelta,
-            prologue = orderWrites(
-                candidate.writes.map { (offset, expr) -> LoopWrite(offset, expr) },
-                LoopWrite::offset,
-                LoopWrite::value,
-            ),
-            writes = peeledWrites,
+            writes = writes,
         )
     }
-
-    private data class Candidate(
-        val guardOffset: Int,
-        val pointerDelta: Int,
-        val writes: Map<Int, Expr>,
-    )
 
     /**
      * Value as a function of the current iteration index k in binomial basis:
@@ -98,6 +110,9 @@ object Optimizer {
      * Degree-1 polynomials correspond to classic {start,+,step} add-recurrences.
      */
     private data class Recurrence(private val coeffs: List<Expr>) {
+        val degree: Int
+            get() = coeffs.lastIndex
+
         val isConstant: Boolean
             get() = coeffs.drop(1).all { it == Const.ZERO }
 
@@ -111,6 +126,22 @@ object Optimizer {
                     coeffs.getOrElse(index) { Const.ZERO } + other.coeffs.getOrElse(index) { Const.ZERO }
                 }
             ).trimmed()
+        }
+
+        operator fun times(other: Recurrence): Recurrence {
+            val terms = MutableList(coeffs.size + other.coeffs.size - 1) { Const.ZERO as Expr }
+            for ((leftDegree, leftCoeff) in coeffs.withIndex()) {
+                if (leftCoeff == Const.ZERO) continue
+                for ((rightDegree, rightCoeff) in other.coeffs.withIndex()) {
+                    if (rightCoeff == Const.ZERO) continue
+                    for (overlap in 0..minOf(leftDegree, rightDegree)) {
+                        val outDegree = leftDegree + rightDegree - overlap
+                        val factor = binomialProductFactor(leftDegree, rightDegree, overlap)
+                        terms[outDegree] = terms[outDegree] + leftCoeff * rightCoeff * Const(factor)
+                    }
+                }
+            }
+            return Recurrence(terms).trimmed()
         }
 
         operator fun unaryMinus(): Recurrence = Recurrence(coeffs.map { -it }).trimmed()
@@ -143,7 +174,7 @@ object Optimizer {
             return value
         }
 
-        private fun trimmed(): Recurrence {
+        fun trimmed(): Recurrence {
             val trimmed = coeffs.toMutableList()
             while (trimmed.lastOrNull() == Const.ZERO) {
                 trimmed.removeLast()
@@ -158,13 +189,31 @@ object Optimizer {
         }
     }
 
-    private fun propagateInvariants(
+    private fun peelCandidate(candidate: Candidate, entryBase: (Int) -> Expr): Candidate? {
+        val invariants = discoverInvariants(candidate.guardOffset, candidate.writes)
+        if (invariants.isEmpty()) return null
+
+        val peeledWrites = candidate.writes
+            .asSequence()
+            .filter { (offset, _) -> offset !in invariants.keys }
+            .map { (offset, expr) -> offset to substituteOffsets(expr, invariants) }
+            .filter { (offset, expr) -> expr != entryBase(offset) }
+            .toMap()
+
+        if (peeledWrites == candidate.writes) return null
+
+        return Candidate(
+            guardOffset = candidate.guardOffset,
+            pointerDelta = candidate.pointerDelta,
+            writes = peeledWrites,
+        )
+    }
+
+    private fun discoverInvariants(
         guardOffset: Int,
         writes: Map<Int, Expr>,
-        deltas: Map<Int, Expr>,
-    ): Map<Int, Expr>? {
+    ): Map<Int, Expr> {
         val invariants = mutableMapOf<Int, Expr>()
-        var substituted = deltas
         var changed = true
 
         while (changed) {
@@ -186,11 +235,9 @@ object Optimizer {
                     changed = true
                 }
             }
-
-            substituted = deltas.mapValues { (_, expr) -> substituteOffsets(expr, invariants) }
         }
 
-        return substituted.takeIf { invariants.isNotEmpty() }
+        return invariants
     }
 
     private fun solveRecurrences(
@@ -243,15 +290,28 @@ object Optimizer {
         return orderWrites(writes, LoopWrite::offset, LoopWrite::value)
     }
 
-    private fun extractCandidate(body: List<Op>, entryCell: (Int) -> Expr): Candidate? {
+    private fun extractCandidate(body: List<AnalysisOp>, entryCell: (Int) -> Expr): Candidate? {
         val state = SymbolicState(entryCell, exactCells = false)
 
-        fun execute(ops: List<Op>): Boolean {
+        fun execute(ops: List<AnalysisOp>): Boolean {
             for (op in ops) {
                 when (op) {
-                    is MovePtr, is SetTemp, is Store -> if (!state.apply(op)) return false
+                    is AnalysisStep -> when (val step = op.op) {
+                        is MovePtr, is SetTemp, is Store -> if (!state.apply(step)) return false
+                        is Read, is Write -> return false
+                        else -> error("Unexpected control op in AnalysisStep: $step")
+                    }
 
-                    is Conditional -> {
+                    is AnalysisSummary -> {
+                        val basePtr = state.ptrOffset
+                        val guard = state.readCellForControl(basePtr + op.summary.guardOffset)
+                        if (guard is Const && validateLoopSummary(op.body, op.summary) { offset -> state.readCell(basePtr + offset) } == false) {
+                            return false
+                        }
+                        if (!applyLoopSummary(state, basePtr, op.summary, guard)) return false
+                    }
+
+                    is AnalysisConditional -> {
                         val guard = state.readCellForControl(state.ptrOffset + op.offset)
                         when (guard) {
                             Const.ZERO -> {}
@@ -260,18 +320,19 @@ object Optimizer {
                         }
                     }
 
-                    is Loop -> {
+                    is AnalysisLoop -> {
                         val basePtr = state.ptrOffset
                         when (val guard = state.readCellForControl(basePtr + op.offset)) {
                             Const.ZERO -> {}
                             else -> {
-                                val summary = analyzeLoop(op.body) { offset -> state.readRelativeForControl(basePtr, offset) } ?: return false
+                                val summary = analyzeLoopAnalysis(op.body) { offset -> state.readRelative(basePtr, offset) } ?: return false
+                                if (guard is Const && validateLoopSummary(op.body, summary) { offset -> state.readCell(basePtr + offset) } == false) {
+                                    return false
+                                }
                                 if (!applyLoopSummary(state, basePtr, summary, guard)) return false
                             }
                         }
                     }
-
-                    is Read, is Write -> return false
                 }
             }
             return true
@@ -322,9 +383,7 @@ object Optimizer {
             if (!value.isConstant) return null
             Recurrence.constant(byte(value.constantTerm))
         }
-        is Mul -> multiplyRecurrences(
-            expr.factors.map { toRecurrence(it, solved, modifiedOffsets) ?: return null }
-        )
+        is Mul -> multiplyRecurrences(expr.factors.map { toRecurrence(it, solved, modifiedOffsets) ?: return null })
 
         is ExactDiv -> {
             val numerator = toRecurrence(expr.numerator, solved, modifiedOffsets) ?: return null
@@ -334,25 +393,58 @@ object Optimizer {
 
         is Choose -> {
             val value = toRecurrence(expr.value, solved, modifiedOffsets) ?: return null
-            if (!value.isConstant) return null
-            Recurrence.constant(choose(value.constantTerm, expr.degree))
+            chooseRecurrence(value, expr.degree)
         }
     }
 
-    private fun multiplyRecurrences(factors: List<Recurrence>): Recurrence? {
+    private fun multiplyRecurrences(factors: List<Recurrence>): Recurrence {
         if (factors.isEmpty()) return Recurrence.constant(Const.ONE)
 
-        val varying = factors.filterNot { it.isConstant }
-        val invariant = factors
-            .filter { it.isConstant }
-            .map { it.constantTerm }
-            .fold(Const.ONE as Expr) { acc, expr -> acc * expr }
-
-        return when (varying.size) {
-            0 -> Recurrence.constant(invariant)
-            1 -> varying.single().scaledBy(invariant)
-            else -> null
+        var product = Recurrence.constant(Const.ONE)
+        for (factor in factors) {
+            product *= factor
         }
+        return product
+    }
+
+    private fun chooseRecurrence(value: Recurrence, degree: Int): Recurrence? {
+        if (degree == 0) return Recurrence.constant(Const.ONE)
+        if (degree == 1) return value
+        if (value.isConstant) return Recurrence.constant(choose(value.constantTerm, degree))
+        if (value.degree > 1) return null
+
+        val samples = MutableList(degree + 1) { index ->
+            choose(value.at(Const(index)), degree)
+        }
+        return recurrenceFromSamples(samples)
+    }
+
+    private fun recurrenceFromSamples(samples: List<Expr>): Recurrence {
+        if (samples.isEmpty()) return Recurrence.constant(Const.ZERO)
+
+        var layer = samples
+        val coeffs = mutableListOf<Expr>()
+        while (layer.isNotEmpty()) {
+            coeffs += layer.first()
+            layer = layer.zipWithNext { left, right -> right + -left }
+        }
+        return Recurrence(coeffs).trimmed()
+    }
+
+    private fun binomialProductFactor(leftDegree: Int, rightDegree: Int, overlap: Int): Int {
+        val top = factorial(leftDegree + rightDegree - overlap)
+        val bottom = factorial(overlap) *
+            factorial(leftDegree - overlap) *
+            factorial(rightDegree - overlap)
+        return exactDivide(top, bottom).toInt()
+    }
+
+    private fun factorial(value: Int): Long {
+        var result = 1L
+        for (i in 2..value) {
+            result *= i.toLong()
+        }
+        return result
     }
 
     private fun modInverse(a: Int, m: Int): Int? {
